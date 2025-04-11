@@ -201,11 +201,11 @@
  *             properties:
  *               phone:
  *                 type: string
- *                 example: "1234567890"
+ *                 example: "8923894749"
  *                 description: User's phone number
  *               password:
  *                 type: string
- *                 example: "password123"
+ *                 example: "1qaz1qaz"
  *                 description: User's password
  *             required:
  *               - phone
