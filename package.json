@@ -1,5 +1,5 @@
 {
-  "name": "GamingRewampDev",
+  "name": "gaming-rewamp-dev",
   "version": "1.0.0",
   "description": "Node APIs for Gaming 2.0",
   "main": "app.js",
@@ -33,5 +33,13 @@
     "swagger-autogen": "^2.23.7",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kushagraIrb/webapis-gaming.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kushagraIrb/webapis-gaming/issues"
+  },
+  "homepage": "https://github.com/kushagraIrb/webapis-gaming#readme"
 }
