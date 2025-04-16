@@ -7,11 +7,8 @@ const authenticateToken = require('../helpers/authToken');
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
-router.get('/current-match', coinFlipController.currentMatch);
-router.get('/', coinFlipController.liveBet);
-router.post('/save', coinFlipController.saveBet);
-router.post('/cancel', coinFlipController.cancelBet);
-router.get('/extra-time-list', coinFlipController.extraTimeList);
-router.get('/:encrypted_id', coinFlipController.getMatchDetails);
+router.get('/current-match', coinFlipController.currentMatchDetails);
+router.get('/user-past-results', coinFlipController.userPastResults);
+router.get('/save-bet', coinFlipController.saveCoinBet);
 
 module.exports = router;

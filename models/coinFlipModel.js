@@ -4,204 +4,85 @@ const moment = require('moment');
 class CoinFlipModel {
     static async fetchCurrentMatch() {
         const query = `
-            SELECT id, match_date, match_time, match_title, match_sub_title, 
-                win_ratio, userBy, modified, isLive, status, final_result
-            FROM tbl_upcoming_match_coinflip
-            WHERE status = 1 
-            AND cancel = 1 
-            AND isLive = 1
-            ORDER BY match_date DESC, match_time DESC
+            SELECT * 
+            FROM tbl_upcoming_match_coinflip 
+            WHERE 
+                status = 1 
+                AND final_result = '' 
+                AND cancel = 1 
+                AND isLive = 1 
             LIMIT 1
         `;
     
         try {
             const [rows] = await db.promise().query(query);
-            return rows;
+            return rows[0] || null;
         } catch (error) {
             console.error('Error in fetching current coin flip match query:', error.message);
             throw new Error('Failed to fetch current coin flip match.');
         }
     }
 
-    static async fetchUserPincode(userId) {
-        const query = `
-            SELECT pincode 
-            FROM tbl_registration 
-            WHERE id = ?
-        `;
-        const [result] = await db.promise().query(query, [userId]);
-        return result[0];
-    }
-
-    static async fetchLiveMatches() {
-        const query = `
-            SELECT 
-                m.id, m.encrypted_id, 
-                m.team_one_name AS team_one_id, t1.team_name AS team_one_name, t1.team_logo AS team_one_logo, 
-                m.team_two_name AS team_two_id, t2.team_name AS team_two_name, t2.team_logo AS team_two_logo, 
-                m.match_name, m.match_date, m.match_time, 
-                m.match_title, m.match_address, m.win_ratio, 
-                m.max_bet, m.userBy, m.modified, m.isLive, m.status
-            FROM tbl_upcoming_match AS m
-            LEFT JOIN tbl_team AS t1 ON m.team_one_name = t1.id
-            LEFT JOIN tbl_team AS t2 ON m.team_two_name = t2.id
-            WHERE 
-                m.status = 1 
-                AND m.cancel = 1 
-                AND m.isLive = 1
-                AND m.id NOT IN (SELECT match_id FROM tbl_winner)
-            ORDER BY m.match_date ASC, m.match_time ASC;
-        `;
-    
-        try {
-            const [rows] = await db.promise().query(query);
-            return rows;
-        } catch (error) {
-            console.error('Error fetching live matches:', error.message);
-            throw new Error('Failed to fetch live matches');
-        }
-    }
-
-    static async updateEncryptedId(id, encryptedId) {
-        try {
-            const query = `UPDATE tbl_upcoming_match SET encrypted_id = ? WHERE id = ?`;
-            await db.promise().query(query, [encryptedId, id]);
-        } catch (error) {
-            console.error(`Error updating encrypted ID for match ID ${id}:`, error.message);
-            throw new Error('Failed to update encrypted ID');
-        }
-    }
-    
-    static async getUserBetIds(userId, matchIds) {
-        if (!matchIds.length) {
-            console.log('No upcoming matches found, skipping user bet check.');
-            return {}; // If no matches, return an empty object
-        }
-    
-        const query = `
-            SELECT match_id, bet_id
-            FROM tbl_bet
-            WHERE user_id = ? AND match_id IN (?) AND status = 1
-        `;
-    
-        try {
-            const [rows] = await db.promise().query(query, [userId, matchIds]);
-    
-            return rows.reduce((acc, bet) => {
-                acc[bet.match_id] = bet.bet_id;
-                return acc;
-            }, {});
-        } catch (error) {
-            console.error('Error fetching user bets:', error.message);
-            throw new Error('Failed to fetch user bets');
-        }
-    }
-
-    static async fetchMatchById(encryptedMatchId) {
-        const query = `
-            SELECT 
-                m.id, m.encrypted_id, 
-                m.team_one_name AS team_one_id, t1.team_name AS team_one_name, t1.team_logo AS team_one_logo, 
-                m.team_two_name AS team_two_id, t2.team_name AS team_two_name, t2.team_logo AS team_two_logo, 
-                m.match_name, m.match_date, m.match_time, 
-                m.match_title, m.match_address, m.win_ratio, 
-                m.max_bet, m.userBy, m.modified, m.isLive, m.status
-            FROM tbl_upcoming_match AS m
-            LEFT JOIN tbl_team AS t1 ON m.team_one_name = t1.id
-            LEFT JOIN tbl_team AS t2 ON m.team_two_name = t2.id
-            WHERE m.encrypted_id = ?
-            LIMIT 1;
-        `;
-    
-        try {
-            const [rows] = await db.promise().query(query, [encryptedMatchId]);
-            return rows.length > 0 ? rows[0] : null;
-        } catch (error) {
-            console.error('Error fetching match details:', error.message);
-            throw new Error('Failed to fetch match details');
-        }
-    }    
-
-    static async fetchTossTypes() {
-        const query = `
-            SELECT * 
-            FROM tbl_toss_type
-            ORDER BY coin_type ASC
-        `;
-        const [result] = await db.promise().query(query);
-        return result;
-    }
-
     static async fetchMinBetAmount() {
         const query = `
             SELECT bet_amount 
             FROM tbl_bet_amount 
-            WHERE status = '1'
+            ORDER BY id DESC 
+            LIMIT 1
         `;
-        const [result] = await db.promise().query(query);
-        return result[0]?.bet_amount || 0;
+    
+        try {
+            const [rows] = await db.promise().query(query);
+            return rows[0]?.bet_amount || null;
+        } catch (error) {
+            console.error('Error in fetching min bet amount:', error.message);
+            throw new Error('Failed to fetch min bet amount.');
+        }
     }
 
-    static async fetchUserBets(userId, encryptedMatchId) {
+    static async fetchPastResults(copyof) {
         const query = `
-            SELECT 
-                tbl_bet.team_id, tbl_bet.amount, tbl_bet.bet_date, tbl_team.team_name, 
-                tbl_upcoming_match.match_date, tbl_upcoming_match.match_time, tbl_upcoming_match.win_ratio
-            FROM tbl_bet
-            INNER JOIN tbl_team ON tbl_bet.team_id = tbl_team.id
-            INNER JOIN tbl_upcoming_match ON tbl_bet.match_id = tbl_upcoming_match.id
-            WHERE tbl_bet.user_id = ? AND tbl_bet.match_id = ? AND tbl_bet.status = 1
+            SELECT final_result 
+            FROM tbl_upcoming_match_coinflip 
+            WHERE (copyof = ? OR id = ?) 
+            AND status = 2 
+            ORDER BY id DESC 
+            LIMIT 20
         `;
-        const [result] = await db.promise().query(query, [userId, encryptedMatchId]);
-        return result;
-    }
 
-    static async fetchUsersInTeam(matchId, teamId) {
-        const query = `SELECT COUNT(toss_id) as count FROM tbl_bet WHERE status = '1' AND match_id = ? AND team_id = ?`;
-        const [result] = await db.promise().query(query, [matchId, teamId]);
-        return result[0].count || 0;
+        try {
+            const [rows] = await db.promise().query(query, [copyof, copyof]);
+            return rows;
+        } catch (error) {
+            console.error('Error fetching past results:', error.message);
+            throw new Error('Failed to fetch past results.');
+        }
     }
     
-    static async fetchTotalUsersInMatch(matchId) {
-        const query = `SELECT COUNT(toss_id) as count FROM tbl_bet WHERE status = '1' AND match_id = ?`;
-        const [result] = await db.promise().query(query, [matchId]);
-        return result[0].count || 0;
-    }    
+    static async fetchUserPastResults(user_id) {
+        const query = `
+            SELECT bet_amount, win_amount, inserted_date
+            FROM tbl_coin_report
+            WHERE status = 1 AND user_id = ?
+            ORDER BY inserted_date DESC
+            LIMIT 10
+        `;
+    
+        try {
+            const [rows] = await db.promise().query(query, [user_id]);
+            return rows;
+        } catch (error) {
+            console.error('Error fetching user past results:', error.message);
+            throw new Error('Failed to fetch user past results.');
+        }
+    }
 
     static async getBettingStatus() {
-        const query = `SELECT on_off_value FROM tbl_bet_on_off `;
+        // const query = `SELECT on_off_value FROM tbl_bet_on_off `;
+        const query = `SELECT * FROM tbl_website_on_off WHERE id = 1`;
         const [result] = await db.promise().query(query);
-        return result[0]?.on_off_value || '1';
-    }
-
-    static async getMatchById(matchId) {
-        try {
-            const query = `SELECT * FROM tbl_winner WHERE match_id = ?`;
-            const [result] = await db.promise().query(query, [matchId]);
-            return result || null;
-        } catch (error) {
-            throw new Error(`Error retrieving match details: ${error.message}`);
-        }
-    }
-
-    static async getMatchTime(matchId) {
-        try {
-            const query = `SELECT match_date,match_time FROM tbl_upcoming_match WHERE id = ?`;
-            const [result] = await db.promise().query(query, [matchId]);
-            return result || null;
-        } catch (error) {
-            throw new Error(`Error retrieving match details: ${error.message}`);
-        }
-    }
-
-    static async getWinnerAnnounced(matchId) {
-        try {
-            const query = `SELECT match_date,match_time FROM tbl_upcoming_match WHERE id = ?`;
-            const [result] = await db.promise().query(query, [matchId]);
-            return result || null;
-        } catch (error) {
-            throw new Error(`Error retrieving match details: ${error.message}`);
-        }
+        return result[0]?.status || '1';
+        // return result[0]?.on_off_value || '1';
     }
 
     static async getMaxTransactionId(userId) {
@@ -214,6 +95,18 @@ class CoinFlipModel {
         const query = `SELECT total_amount FROM tbl_transaction_history WHERE trans_id = ?`;
         const [result] = await db.promise().query(query, [transId]);
         return result ? result[0].total_amount : 0;
+    }
+
+    static async getMaxBonusId(userId) {
+        const query = `SELECT MAX(bonus_id) AS max_bonus_id FROM tbl_bonus_history WHERE user_id = ?`;
+        const [result] = await db.promise().query(query, [userId]);
+        return result ? result[0].max_bonus_id : null;
+    }
+
+    static async getBonusAmountByBonusId(bonusId) {
+        const query = `SELECT total_bonus FROM tbl_bonus_history WHERE bonus_id = ?`;
+        const [result] = await db.promise().query(query, [bonusId]);
+        return result ? result[0].total_bonus : 0;
     }
 
     static async fetchBetAmount(betId) {
@@ -245,177 +138,53 @@ class CoinFlipModel {
         }
     }
 
-    static async CalculateBetCancelCharge(debitAmount) {
+    static async checkAlreadyBet(userId, matchId) {
+        const query = `
+            SELECT COUNT(*) AS total
+            FROM tbl_coin_bet
+            WHERE user_id = ? AND match_id = ? AND status = 1
+        `;
+    
         try {
-            // Fetch cancel_amount from tbl_bet_cancel_charges
-            const query = `SELECT cancel_amount FROM tbl_bet_cancel_charges LIMIT 1`;
-            const [result] = await db.promise().query(query);
-    
-            if (!result.length) {
-                throw new Error("No cancel amount found in database.");
-            }
-    
-            const cancelAmount = result[0].cancel_amount;
-            const totalCharge = (cancelAmount / 100) * debitAmount; // Apply percentage formula
-    
-            return totalCharge;
+            const [rows] = await db.promise().query(query, [userId, matchId]);
+            return rows[0]?.total > 0; // returns true if bet exists
         } catch (error) {
-            console.error("Error fetching bet cancellation charge:", error.message);
-            throw new Error("Failed to fetch cancellation charge.");
-        }
-    }    
-    
-    static async insertRefundTransaction(refundData) {
-        try {
-            // Get the current time in IST
-            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-            const query = `
-                INSERT INTO tbl_transaction_history 
-                (bet_id, match_id, user_id, credit_amount, total_amount, cancel_charge, type, t_status, transaction_date, current_bonus_league_id) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    
-            const values = [
-                refundData.bet_id,
-                refundData.match_id,
-                refundData.user_id,
-                refundData.credit_amount,
-                refundData.total_amount,
-                refundData.cancel_charge,
-                refundData.type,
-                refundData.t_status,
-                istTime,
-                refundData.bonus_league_id
-            ];
-    
-            const [result] = await db.promise().query(query, values);
-            
-            console.log("Wallet refund transaction inserted:", result);
-            return result.affectedRows > 0;
-        } catch (error) {
-            console.error("Error inserting refund transaction:", error);
-            throw new Error('Database insertion failed');
-        }
-    }
-    
-    static async updateBetStatus(betId) {
-        try {
-            const query = `UPDATE tbl_bet SET status = '0', cancel_by = 'By User', cancel_date = ? WHERE bet_id = ?`;
-            const values = [new Date(), betId];
-            const [result] = await db.promise().query(query, values);
-            return result.affectedRows > 0;
-        } catch (error) {
-            console.error("Error canceling bet:", error);
-            throw new Error('Database update failed');
+            console.error('Error in checkAlreadyBet query:', error.message);
+            throw new Error('Failed to check if user already placed bet.');
         }
     }
 
-    static async getMaxBonusId(userId) {
-        const query = `SELECT MAX(bonus_id) AS max_bonus_id FROM tbl_bonus_history WHERE user_id = ?`;
-        const [result] = await db.promise().query(query, [userId]);
-        return result ? result[0].max_bonus_id : null;
-    }
-
-    static async getBonusAmountByBonusId(bonusId) {
-        const query = `SELECT total_bonus FROM tbl_bonus_history WHERE bonus_id = ?`;
-        const [result] = await db.promise().query(query, [bonusId]);
-        return result ? result[0].total_bonus : 0;
-    }
-    
-    static async getMatchStatus(matchId) {
-        const query = `SELECT cancel FROM tbl_upcoming_match WHERE id = ?`;
-        const [result] = await db.promise().query(query, [matchId]);
-        return result || null;
-    }
-
-    static async getBetStatus(userId, bet_id) {
-        const query = `SELECT status FROM tbl_bet WHERE user_id = ? AND bet_id = ?`;
-        const [result] = await db.promise().query(query, [userId, bet_id]);
-        return result || null;
-    }
-
-    // static async userHasBetOnMatch(userId, matchId) {
-    //     try {
-    //       const query = `SELECT 1 FROM tbl_bet WHERE status = 1 AND user_id = ? AND match_id = ?`;
-    //       const [result] = await db.promise().query(query, [userId, matchId]);
-    //         return result.length > 0;
-    //     } catch (error) {
-    //       throw new Error('Error checking bet status');
-    //     }
-    // }
-
-    static async userHasBetOnMatch(userId, matchId, firstMatchTime) {
+    static async getMatchTime(userId, matchId) {
         try {
-            const query = `SELECT 1 FROM tbl_bet WHERE status = 1 AND user_id = ? AND match_id = ? AND bet_date < ?`;
-            const [result] = await db.promise().query(query, [userId, matchId, firstMatchTime]);
-            return result.length > 0;
+          const query = `
+            SELECT 
+              (SELECT bet_date FROM tbl_coin_bet WHERE user_id = ? ORDER BY bet_id DESC LIMIT 1) AS bet_date,
+              match_date,
+              match_time
+            FROM tbl_upcoming_match_coinflip
+            WHERE id = ?
+          `;
+          const [result] = await db.promise().query(query, [userId, matchId]);
+          return result || null;
         } catch (error) {
-            throw new Error('Error checking bet status');
-        }
-    }
-
-    // Create a transaction record in the tbl_transaction_history
-    static async createTransaction(walletHistory) {
-        try {
-            // Get the current time in IST
-            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-            const query = `INSERT INTO tbl_transaction_history (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id, debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id) VALUES (0, ?, ?, 0, 0, ?, 0, ?, ?, ?, ?, ?, ?)`;
-            const [result] = await db.promise().query(query, [
-                walletHistory.bet_id, 
-                walletHistory.match_id, 
-                walletHistory.user_id, 
-                walletHistory.debit_amount, 
-                walletHistory.total_amount, 
-                walletHistory.type, 
-                walletHistory.t_status,
-                istTime,
-                walletHistory.bonus_league_id
-            ]);
-            return { transId: result.insertId };
-        } catch (error) {
-            throw new Error('Error creating transaction: ' + error.message);
+          throw new Error(`Error retrieving match details: ${error.message}`);
         }
     }
 
     // Place a bet and insert the bet data into the tbl_bet table
-    static async placeBet(betData) {
+    static async saveCoinBet(betData) {
         try {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-            const query = `INSERT INTO tbl_bet (user_id, match_id, team_id, toss_id, amount, bonus_amount, wallet_amount, bet_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+            const query = `INSERT INTO tbl_coin_bet (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date) VALUES (?, ?, ?, ?, ?, ?)`;
             const [result] = await db.promise().query(query, [
                 betData.user_id,
                 betData.match_id,
-                betData.team_id,
-                betData.toss_id,
                 betData.amount,
                 betData.bonus_amount,
                 betData.wallet_amount,
-                istTime
-            ]);
-            return { betId: result.insertId };  // Return the inserted bet ID along with the bet data
-        } catch (error) {
-            throw new Error('Error placing bet: ' + error.message);
-        }
-    }
-
-    // Place a bet and insert the bet data into the tbl_bet table
-    static async cancelLiveBet(betData) {
-        try {
-            // Get the current time in IST
-            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-            const query = `INSERT INTO tbl_bet (user_id, match_id, team_id, toss_id, amount, bonus_amount, wallet_amount, bet_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-            const [result] = await db.promise().query(query, [
-                betData.user_id,
-                betData.match_id,
-                betData.team_id,
-                betData.toss_id,
-                betData.amount,
-                betData.bonus_amount,
-                betData.wallet_amount,
+                betData.prediction,
                 istTime
             ]);
             return { betId: result.insertId };  // Return the inserted bet ID along with the bet data
@@ -427,7 +196,7 @@ class CoinFlipModel {
     // Find one record by user_id and bet_id
     static async findOne(queryParams) {
         try {
-            const query = `SELECT * FROM tbl_bet WHERE user_id = ? AND bet_id = ?`;
+            const query = `SELECT * FROM tbl_coin_bet WHERE user_id = ? AND bet_id = ?`;
             const [result] = await db.promise().query(query, [queryParams.user_id, queryParams.bet_id]);
             return result[0] || null;
         } catch (error) {
@@ -436,19 +205,29 @@ class CoinFlipModel {
         }
     }
 
+    static async fetchThresholdAmount() {
+        const query = `SELECT threshold_amount FROM tbl_betting_mail ORDER BY id DESC LIMIT 1`;
+        const [rows] = await db.promise().query(query);
+        return rows.length > 0 ? rows[0].threshold_amount : null;
+    }
+    
+    static async fetchUserDetails(user_id) {
+        const query = `SELECT first_name, last_name, phone FROM tbl_registration WHERE id = ?`;
+        const [rows] = await db.promise().query(query, [user_id]);
+        return rows.length > 0 ? rows[0] : null;
+    }
+
     // Insert Report Data
     static async insertReportData(reportData) {
         try {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-            const query = `INSERT INTO tbl_report (bet_id, user_id, match_id, team_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+            const query = `INSERT INTO tbl_report (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
             const [result] = await db.promise().query(query, 
                 [
                     reportData.bet_id, 
-                    reportData.user_id, 
-                    reportData.match_id, 
-                    reportData.team_id, 
+                    reportData.user_id,
                     reportData.bet_amount, 
                     reportData.bet_from_bonus, 
                     reportData.bet_from_wallet, 
@@ -462,41 +241,92 @@ class CoinFlipModel {
     }
 
     // Insert Bonus Data
+    // static async insertBonusData(bonusHistoryData) {
+    //     try {
+    //         // Get the current time in IST
+    //         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+    //         const query = `INSERT INTO tbl_bonus_history (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)`;
+    //         const [result] = await db.promise().query(query, [bonusHistoryData.user_id, bonusHistoryData.bet_id, bonusHistoryData.match_id, bonusHistoryData.debit_bonus, bonusHistoryData.total_bonus, bonusHistoryData.bonus_type, bonusHistoryData.bonus_status, istTime]);
+    //         return { bonusId: result.insertId };
+    //     } catch (error) {
+    //         console.error('Error inserting bonus data:', error);
+    //         throw new Error('Error inserting bonus data');
+    //     }
+    // }
+
     static async insertBonusData(bonusHistoryData) {
+        try {
+          const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+      
+          let query, values;
+      
+          if (bonusHistoryData.fromElse) {
+            query = `
+              INSERT INTO tbl_bonus_history 
+              (user_id, bet_id, match_id, coin_match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
+              VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+            `;
+            values = [
+              bonusHistoryData.user_id,
+              bonusHistoryData.bet_id,
+              bonusHistoryData.match_id,
+              bonusHistoryData.match_id,
+              bonusHistoryData.debit_bonus,
+              bonusHistoryData.total_bonus,
+              bonusHistoryData.bonus_type,
+              bonusHistoryData.bonus_status,
+              istTime
+            ];
+          } else {
+            query = `
+              INSERT INTO tbl_bonus_history 
+              (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
+              VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+            `;
+            values = [
+              bonusHistoryData.user_id,
+              bonusHistoryData.bet_id,
+              bonusHistoryData.match_id,
+              bonusHistoryData.debit_bonus,
+              bonusHistoryData.total_bonus,
+              bonusHistoryData.bonus_type,
+              bonusHistoryData.bonus_status,
+              istTime
+            ];
+          }
+      
+          const [result] = await db.promise().query(query, values);
+          return { bonusId: result.insertId };
+      
+        } catch (error) {
+          console.error('Error inserting bonus data:', error);
+          throw new Error('Error inserting bonus data');
+        }
+    }      
+
+    // Create a transaction record in the tbl_transaction_history
+    static async createTransaction(walletHistory) {
         try {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-            const query = `INSERT INTO tbl_bonus_history (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)`;
-            const [result] = await db.promise().query(query, [bonusHistoryData.user_id, bonusHistoryData.bet_id, bonusHistoryData.match_id, bonusHistoryData.debit_bonus, bonusHistoryData.total_bonus, bonusHistoryData.bonus_type, bonusHistoryData.bonus_status, istTime]);
-            return { bonusId: result.insertId };
+            const query = `INSERT INTO tbl_transaction_history (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id, debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id) VALUES (0, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            const [result] = await db.promise().query(query, [
+                walletHistory.bet_id, 
+                walletHistory.match_id,
+                walletHistory.match_id,
+                walletHistory.user_id, 
+                walletHistory.debit_amount, 
+                walletHistory.total_amount, 
+                walletHistory.type, 
+                walletHistory.t_status,
+                istTime,
+                walletHistory.bonus_league_id
+            ]);
+            return { transId: result.insertId };
         } catch (error) {
-            console.error('Error inserting bonus data:', error);
-            throw new Error('Error inserting bonus data');
-        }
-    }
-
-    // Find User by ID (for wallet amount)
-    static async findUserById(user_id) {
-        try {
-            const query = `SELECT * FROM tbl_registration WHERE id = ?`;
-            const [user] = await db.promise().query(query, [user_id]);
-            return user[0];
-        } catch (error) {
-            console.error('Error fetching user:', error);
-            throw new Error('Error fetching user');
-        }
-    }
-
-    static async fetchExtraTimeLiveMatches() {
-        const query = `SELECT id, match_name, match_date, match_time, match_title, win_ratio, max_bet FROM tbl_upcoming_match WHERE status = 1 AND cancel = 1 AND isLive = 1 AND ext_time = 1 ORDER BY match_date ASC, match_time ASC`;
-
-        try {
-            const [results] = await db.promise().query(query);
-            return results;
-        } catch (error) {
-            console.error('Error fetching matches:', error.message);
-            throw new Error('Failed to fetch matches');
+            throw new Error('Error creating transaction: ' + error.message);
         }
     }
 }
