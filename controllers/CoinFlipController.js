@@ -378,6 +378,25 @@ class CoinFlipController {
     //         res.status(500).json({ error: 'Internal server error!' });
     //     }
     // }
+
+    // Give winning to the users who all won
+    async createWinner(req, res) { 
+        try {
+          const matchResult = await coinFlipService.getEligibleMatch();
+      
+          if (!matchResult) {
+            return res.status(200).send({ message: 'No eligible match to process.' });
+          }
+      
+          await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+      
+          return res.status(200).send('Match result processed and winnings distributed.');
+      
+        } catch (error) {
+          console.error('Error in createWinner:', error.message);
+          return res.status(500).send({ msg: 'Error occurred', error: error.message });
+        }
+    }
 }
 
 module.exports = new CoinFlipController();

@@ -239,6 +239,115 @@ class CoinFlipService {
       throw new Error('Error recording transaction history');
     }
   }
+
+  static async getEligibleMatch() {
+    try {
+      const match = await coinFlipModel.getEligibleMatch();
+      if (!match) {
+        return null;
+      }
+
+      let result = match.result;
+      if (result === 'Automatic') {
+        const arr = ['Tail', 'Head'];
+        const random = Math.floor(Math.random() * 2);
+        result = arr[random];
+      }
+
+      // Update the match record with the final result
+      await coinFlipModel.updateMatchResult(match.id, result);
+
+      // You can now return both match and result to continue further in another function or step
+      return { match, result };
+
+    } catch (error) {
+      throw new Error('Error in giveWinning: ' + error.message);
+    }
+  }
+
+  static async giveWinnings(match, result) {
+    try {
+      const { id: matchId, win_ratio } = match;
+  
+      const winUsers = await coinFlipModel.getWinningUsers(matchId, result);
+  
+      for (const bet of winUsers) {
+        const userId = bet.user_id;
+        const amount = parseFloat(bet.amount);
+  
+        const winAmount = (win_ratio / 100) * amount;
+        const totalUserAmount = amount + winAmount;
+  
+        const currentWallet = await this.calculateWalletAmount(userId);
+        const newWallet = currentWallet + totalUserAmount;
+  
+        const winnerData = {
+          win_ratio,
+          match_id: matchId,
+          userBy: userId,
+        };
+        const winId = await coinFlipModel.insertCoinWinner(winnerData);
+  
+        const txnData = {
+          match_id: matchId,
+          coin_match_id: matchId,
+          win_id: winId,
+          user_id: userId,
+          credit_amount: totalUserAmount,
+          total_amount: newWallet,
+          type: 'Credit',
+          t_status: 'Win',
+        };
+        await coinFlipModel.insertTransaction(txnData);
+        await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount);
+      }
+
+      // ✅ Create new game after winnings processed
+      await createGame();
+  
+    } catch (error) {
+      throw new Error('Error in giveWinnings: ' + error.message);
+    }
+  }
+
+  // Create games based on repeatable matches
+  static async createGame() {
+    try {
+      // Fetch repeatable matches
+      const repeatableMatches = await coinFlipModel.getRepeatableMatches();
+
+      // Iterate over each match and create new games
+      for (const row of repeatableMatches) {
+        // Get the last copy of the match
+        const latest = await coinFlipModel.getLastCopyOfMatch(row.id);
+
+        const newGameData = {
+          match_name: row.match_name,
+          isHomePage: row.isHomePage,
+          match_title: row.match_title,
+          match_sub_title: row.match_sub_title,
+          match_address: row.match_address,
+          win_ratio: latest?.win_ratio || row.win_ratio,
+          status: 1,
+          isLive: row.isLive,
+          cancel: row.cancel,
+          result: row.result,
+          final_result: "",
+          repeat: row.repeat,
+          userBy: row.userBy,
+          modified: row.modified,
+          archive: row.archive,
+          copyof: row.id,
+        };
+
+        // Create new game with the retrieved data
+        await coinFlipModel.createNewGame(newGameData);
+      }
+    } catch (error) {
+      console.error("Error in createGame:", error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = CoinFlipService;

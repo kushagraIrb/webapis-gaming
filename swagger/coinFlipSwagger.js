@@ -122,3 +122,49 @@
  *                   type: string
  *                   example: "Internal server error!"
  */
+
+/**
+ * @swagger
+ * /api/coin-flip/create-winner:
+ *   post:
+ *     summary: "Process match result and distribute winnings"
+ *     description: "This endpoint processes the results of an eligible coin flip match and distributes winnings to the winning users based on their bet predictions."
+ *     tags:
+ *       - Coin Flip
+ *     security:
+ *       - bearerAuth: []  # Assumes bearer token authentication
+ *     responses:
+ *       200:
+ *         description: "Match result processed and winnings distributed successfully"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Match result processed and winnings distributed."
+ *       401:
+ *         description: "Unauthorized or no eligible match to process"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "No eligible match to process."
+ *       500:
+ *         description: "Internal server error"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Error occurred while processing the match result."
+ */

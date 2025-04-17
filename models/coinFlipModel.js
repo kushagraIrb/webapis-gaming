@@ -329,6 +329,196 @@ class CoinFlipModel {
             throw new Error('Error creating transaction: ' + error.message);
         }
     }
+
+    static async getEligibleMatch() {
+        try {
+            const istTime = moment().tz("Asia/Kolkata");
+            const currentDate = istTime.format("YYYY-MM-DD");
+            const currentTime = istTime.format("HH:mm:ss");
+    
+            const query = `
+              SELECT * FROM tbl_upcoming_match_coinflip
+              WHERE status = 1
+              AND match_date = ?
+              AND match_time < ?
+              ORDER BY id DESC
+              LIMIT 1
+            `;
+    
+            const [rows] = await db.promise().query(query, [currentDate, currentTime]);
+            return rows.length ? rows[0] : null;
+    
+        } catch (error) {
+            console.error("Error in getEligibleMatch:", error.message);
+            throw error;
+        }
+    }
+    
+    static async updateMatchResult(matchId, result) {
+        try {
+            const query = `
+              UPDATE tbl_upcoming_match_coinflip
+              SET status = 2, final_result = ?
+              WHERE id = ?
+            `;
+            const [resultSet] = await db.promise().query(query, [result, matchId]);
+            return resultSet.affectedRows > 0;
+        } catch (error) {
+            console.error("Error in updateMatchResult:", error.message);
+            throw error;
+        }
+    }
+    
+    static async getWinningUsers(matchId, result) {
+        try {
+            const query = `
+              SELECT user_id, amount, bet_id, prediction
+              FROM tbl_coin_bet
+              WHERE match_id = ? AND status = 1 AND prediction = ?
+            `;
+            const [rows] = await db.promise().query(query, [matchId, result]);
+            return rows;
+        } catch (error) {
+            console.error("Error in getWinningUsers:", error.message);
+            throw error;
+        }
+    }    
+    
+    static async insertCoinWinner(data) {
+        try {
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const query = `
+              INSERT INTO tbl_coin_winner (win_ratio, match_id, userBy, win_date)
+              VALUES (?, ?, ?, ?)
+            `;
+            const [result] = await db.promise().query(query, [
+                data.win_ratio,
+                data.match_id,
+                data.userBy,
+                istTime
+            ]);
+            return result.insertId;
+        } catch (error) {
+            console.error("Error in insertCoinWinner:", error.message);
+            throw error;
+        }
+    }
+    
+    static async insertTransaction(data) {
+        try {
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const query = `
+              INSERT INTO tbl_transaction_history 
+              (match_id, coin_match_id, win_id, user_id, credit_amount, total_amount, type, t_status, transaction_date)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            await db.promise().query(query, [
+                data.match_id,
+                data.coin_match_id,
+                data.win_id,
+                data.user_id,
+                data.credit_amount,
+                data.total_amount,
+                data.type,
+                data.t_status,
+                istTime
+            ]);
+        } catch (error) {
+            console.error("Error in insertTransaction:", error.message);
+            throw error;
+        }
+    }
+    
+    static async updateCoinReport(betId, winAmount) {
+        try {
+            const query = `
+              UPDATE tbl_coin_report
+              SET win_amount = ?
+              WHERE bet_id = ?
+            `;
+            await db.promise().query(query, [winAmount, betId]);
+        } catch (error) {
+            console.error("Error in updateCoinReport:", error.message);
+            throw error;
+        }
+    }
+
+    // Fetch repeatable matches
+    static async getRepeatableMatches() {
+        try {
+            const query = `
+                SELECT * FROM tbl_upcoming_match_coinflip 
+                WHERE repeat > 0 AND copyof = 0
+            `;
+            const [rows] = await db.promise().query(query);
+            return rows;
+        } catch (error) {
+            console.error("Error in getRepeatableMatches:", error.message);
+            throw error;
+        }
+    }
+    
+    // Fetch the last copy of a match by ID
+    static async getLastCopyOfMatch(copyofId) {
+        try {
+            const query = `
+                SELECT * FROM tbl_upcoming_match_coinflip 
+                WHERE copyof = ? 
+                ORDER BY id DESC 
+                LIMIT 1
+            `;
+            const [rows] = await db.promise().query(query, [copyofId]);
+            return rows[0];
+        } catch (error) {
+            console.error("Error in getLastCopyOfMatch:", error.message);
+            throw error;
+        }
+    }
+    
+    // Create a new game from the repeatable match data
+    static async createNewGame(newGameData) {
+        try {
+            // Get the current time in IST timezone
+            const istTime = moment().tz("Asia/Kolkata");
+
+            // Format match_date and match_time
+            const matchDate = istTime.format("YYYY-MM-DD");
+            const matchTime = istTime.add(newGameData.repeat, 'seconds').format("HH:mm:ss");
+
+            const query = `
+                INSERT INTO tbl_upcoming_match_coinflip 
+                (match_name, match_date, match_time, isHomePage, match_title, match_sub_title, 
+                match_address, win_ratio, status, isLive, cancel, result, final_result, repeat, 
+                userBy, modified, archive, copyof, created)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            
+            await db.promise().query(query, [
+                newGameData.match_name,
+                matchDate,
+                matchTime,
+                newGameData.isHomePage,
+                newGameData.match_title,
+                newGameData.match_sub_title,
+                newGameData.match_address,
+                newGameData.win_ratio,
+                newGameData.status,
+                newGameData.isLive,
+                newGameData.cancel,
+                newGameData.result,
+                newGameData.final_result,
+                newGameData.repeat,
+                newGameData.userBy,
+                newGameData.modified,
+                newGameData.archive,
+                newGameData.copyof,
+                istTime.format("YYYY-MM-DD HH:mm:ss")
+            ]);
+        } catch (error) {
+            console.error("Error in createNewGame:", error.message);
+            throw error;
+        }
+    }
 }
 
 module.exports = CoinFlipModel;
