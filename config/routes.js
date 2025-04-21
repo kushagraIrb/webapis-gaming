@@ -19,6 +19,7 @@ const routes = [
     { path: '/api/bonus', router: require('../routes/bonusRouter') },
     { path: '/api/win-list', router: require('../routes/winListRouter') },
     { path: '/api/coin-flip', router: require('../routes/coinFlipRouter') },
+    { path: '/api/limbo', router: require('../routes/limboRouter') },
 ];
 
 module.exports = (app) => {
