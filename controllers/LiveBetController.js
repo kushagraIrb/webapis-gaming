@@ -97,6 +97,15 @@ class LiveBetController {
                     message: 'The winner of the match has already been announced. Please try betting on another match!',
                 });
             }
+
+             // Step 3: Check if the betting is allowed by the admin or not (At the time of withdrawing the money user has access to toggle the betting rights of the user)
+            const bettingRestricted = await liveBetService.isUserRestrictedFromBetting(user_id);
+            if (bettingRestricted > 0) {
+                // ❌ At least one row has is_bet_allowed = 1
+                return res.status(403).json({
+                    message: 'Your withdrawal is in progress so betting is currently restricted. Please try again after some time!',
+                });
+            }
       
             // Step 4: Validate user balance (wallet + bonus)
             const walletAmount = parseFloat(await liveBetService.calculateWalletAmount(user_id));

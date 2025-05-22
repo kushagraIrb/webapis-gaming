@@ -191,6 +191,17 @@ class LiveBetModel {
         }
     }
 
+    static async hasDisallowedBetsInLastWeek(userId) {
+        try {
+            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const query = `SELECT COUNT(*) as count FROM tbl_withdrawal WHERE modified >= ? AND is_bet_allowed = 1 AND user_id = ?`;
+            const [rows] = await db.promise().query(query, [oneWeekAgo, userId]);
+            return rows[0].count > 0;
+        } catch (error) {
+            throw new Error(`Error checking disallowed bets: ${error.message}`);
+        }
+    }
+
     static async getMatchTime(matchId) {
         try {
             const query = `SELECT match_date,match_time FROM tbl_upcoming_match WHERE id = ?`;
@@ -307,9 +318,11 @@ class LiveBetModel {
     
     static async updateBetStatus(betId) {
         try {
+            // Get the current time in IST
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
             const query = `UPDATE tbl_bet SET status = '0', cancel_by = 'By User', cancel_date = ? WHERE bet_id = ?`;
-            const values = [new Date(), betId];
-            const [result] = await db.promise().query(query, values);
+            const [result] = await db.promise().query(query, [istTime, betId]);
             return result.affectedRows > 0;
         } catch (error) {
             console.error("Error canceling bet:", error);

@@ -15,6 +15,7 @@ const authToken = async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('decoded: ' , decoded);
         req.user_id = decoded.id;
 
         // Fetch user from DB
@@ -28,8 +29,12 @@ const authToken = async (req, res, next) => {
         const user = results[0];
 
         // Check if the user is verified and active
-        if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
-            return res.status(403).json({ message: 'Your login Id is blocked, please contact the administrator.' });
+        if (user.is_verified !== 1 || user.status !== 1) {
+            return res.status(423).json({ message: 'Your login Id is blocked, please contact the administrator.' });
+        }
+        
+        if (user.is_verified !== 1 || user.ip_status !== 1) {
+            return res.status(401).json({ message: 'Your login Id is blocked, please contact the administrator.' });
         }
 
         next();

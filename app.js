@@ -10,7 +10,7 @@ const { swaggerUi, swaggerDocs } = require('./config/swagger.js'); // Import the
 const { logger, deleteOldLogs } = require('./logger.js'); // Import the Winston logger
 var db = require('./config/database');
 const setupRoutes = require('./config/routes');
-const checkIPAccess = require('./helpers/checkIpAccess.js');
+const { checkIPAccess, checkIPAccessStatus } = require('./helpers/checkIpAccess.js');
 
 // Run cleanup every 24 hours
 setInterval(() => {
@@ -54,6 +54,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 app.use(checkIPAccess);
 setupRoutes(app);
+
+// API specifically for checking IP status
+app.get('/api/check-ip', checkIPAccessStatus);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

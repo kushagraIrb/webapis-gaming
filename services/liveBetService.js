@@ -231,6 +231,15 @@ class LiveBetService {
       }
     }
 
+    static async isUserRestrictedFromBetting(userId) {
+      try {
+        const hasDisallowed = await liveBetModel.hasDisallowedBetsInLastWeek(userId);
+        return hasDisallowed;
+      } catch (error) {
+        throw new Error('Error determining betting restriction');
+      }
+    }
+
     static async calculateWalletAmount(userId) {
       try {
         // Step 1: Get the maximum transaction ID for the user
