@@ -63,6 +63,31 @@ class UserService {
         return { msg: 'OTP has been sent successfully!' };
     }
 
+    static async checkNameExists(firstName, lastName) {
+        return await userModel.checkUserNameExists(firstName, lastName);
+    }
+
+    static async generateNameSuggestions(firstName, lastName) {
+        const timestamp = Date.now().toString().slice(-4);
+        const randomNum = () => Math.floor(Math.random() * 90 + 10);
+
+        // If lastName is provided, append variations to it
+        if (lastName) {
+            return [
+                { first_name: firstName, last_name: `${lastName}${randomNum()}` },
+                { first_name: firstName, last_name: `${lastName}_${randomNum()}` },
+                { first_name: firstName, last_name: `${lastName}_${timestamp}` }
+            ];
+        } else {
+            // If lastName is not provided, append variations to firstName and return as last_name
+            return [
+                { first_name: `${firstName}${randomNum()}` },
+                { first_name: `${firstName}_${randomNum()}` },
+                { first_name: `${firstName}_${timestamp}` }
+            ];
+        }
+    }
+
     static async validateOtp(email, phone, otp) {
         const isValidOtp = await userModel.checkOtp(email, phone, otp);
         return isValidOtp;

@@ -67,6 +67,35 @@ class UserController {
         }
     }
 
+    // Auto suggest name
+    async checkNameAvailability(req, res) {
+        try {
+            const { first_name, last_name } = req.body;
+
+            if (!first_name) {
+                return res.status(400).json({ msg: 'First name is required.' });
+            }
+
+            const nameExists = await userService.checkNameExists(first_name, last_name || '');
+            if (nameExists) {
+                const suggestions = await userService.generateNameSuggestions(first_name, last_name || '');
+                return res.status(200).json({
+                    msg: 'A user with this name already exists.',
+                    alreadyExists: true,
+                    suggestions
+                });
+            }
+
+            return res.status(200).json({
+                msg: 'Name is available.',
+                alreadyExists: false
+            });
+        } catch (error) {
+            logger.error(`Error checking name availability: ${error.message}`, { stack: error.stack });
+            return res.status(500).json({ msg: 'Something went wrong.' });
+        }
+    }
+
     // Register Method
     async register(req, res) {
         try {

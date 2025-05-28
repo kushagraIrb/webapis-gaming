@@ -11,6 +11,7 @@ router.use(express.json());
 
 router.post('/send-otp', otpValidation, userController.sendOtp);
 
+router.post('/check-name', userController.checkNameAvailability);
 router.get('/fetch-state', userController.fetchUserState);
 router.post('/register', signUpValidation, userController.register);
 router.post('/login', loginValidation, userController.login);

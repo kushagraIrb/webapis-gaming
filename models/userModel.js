@@ -143,6 +143,29 @@ class UserModel {
         return 0;
     }
 
+    static async checkUserNameExists(firstName, lastName) {
+        let query, params;
+
+        if (lastName) {
+            query = `
+                SELECT COUNT(*) AS count 
+                FROM tbl_registration 
+                WHERE first_name = ? AND last_name = ?
+            `;
+            params = [firstName, lastName];
+        } else {
+            query = `
+                SELECT COUNT(*) AS count 
+                FROM tbl_registration 
+                WHERE first_name = ? AND (last_name IS NULL OR last_name = '')
+            `;
+            params = [firstName];
+        }
+
+        const [rows] = await db.promise().query(query, params);
+        return rows[0].count > 0;
+    }
+
     static async checkOtp(email, phone, otp) {
         const query = `SELECT otp FROM otp_verified WHERE email = ? AND phone = ? ORDER BY id DESC LIMIT 1`;
         const [result] = await db.promise().query(query, [email, phone]);
