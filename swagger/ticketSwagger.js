@@ -1,5 +1,43 @@
 /**
  * @swagger
+ * /api/ticket/close-old:
+ *   put:
+ *     summary: Close old tickets based on criteria
+ *     description: >
+ *       Closes all tickets grouped by token number where:
+ *       - The latest entry per token is older than 1 day (based on IST timezone), and
+ *       - The latest entry has `read_by_user = 1`.
+ *       Closing a ticket means updating the status to 2 (Closed).
+ *       User ID is inferred from the authenticated session or token.
+ *     tags:
+ *       - Ticket
+ *     responses:
+ *       200:
+ *         description: Successfully closed old tickets.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 closedCount:
+ *                   type: integer
+ *                   example: 5
+ *                 message:
+ *                   type: string
+ *                   example: "Old tickets closed successfully"
+ *       204:
+ *         description: No eligible old tickets found for closure.
+ *       401:
+ *         description: Unauthorized. User is not authenticated.
+ *       500:
+ *         description: Internal server error.
+ */
+
+/**
+ * @swagger
  * /api/ticket/history:
  *   get:
  *     summary: Fetch token history for a user

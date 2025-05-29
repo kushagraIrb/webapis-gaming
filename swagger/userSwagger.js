@@ -1,5 +1,91 @@
 /**
  * @swagger
+ * /api/users/check-name:
+ *   post:
+ *     summary: Check if user name combination exists and suggest alternatives
+ *     tags:
+ *       - Users
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               first_name:
+ *                 type: string
+ *                 example: "John"
+ *                 description: User's first name
+ *               last_name:
+ *                 type: string
+ *                 example: "Doe"
+ *                 description: User's last name (optional)
+ *             required:
+ *               - first_name
+ *     responses:
+ *       200:
+ *         description: Name is available or suggestions provided
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 alreadyExists:
+ *                   type: boolean
+ *                   example: true
+ *                 msg:
+ *                   type: string
+ *                   example: A user with this name already exists.
+ *                 suggestions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       first_name:
+ *                         type: string
+ *                         example: "JohnDoe8712"
+ *                       last_name:
+ *                         type: string
+ *                         example: "Doe_8712"
+ *                   example:
+ *                     - first_name: "John"
+ *                       last_name: "Doe34"
+ *                     - first_name: "John"
+ *                       last_name: "Doe_56"
+ *                     - first_name: "John"
+ *                       last_name: "Doe_9123"
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       msg:
+ *                         type: string
+ *                         example: "First name is required"
+ *                       param:
+ *                         type: string
+ *                         example: "first_name"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "An error occurred while checking the name"
+ */
+
+/**
+ * @swagger
  * /api/users/send-otp:
  *   post:
  *     summary: Send OTP to user's phone

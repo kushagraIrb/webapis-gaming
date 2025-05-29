@@ -12,6 +12,9 @@ router.use(express.json());
 router.use(authenticateToken);
 
 router.get('/types', ticketController.fetchTicketTypes);
+
+router.put('/close-old', ticketController.closeOldTickets);
+
 router.post('/save', upload.single('screenshort'), ticketController.saveTicket);
 router.get('/history', ticketController.fetchTicketHistory);
 router.post('/reply-history', ticketController.getHistoryDataByTicketID);

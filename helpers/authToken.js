@@ -15,7 +15,6 @@ const authToken = async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        console.log('decoded: ' , decoded);
         req.user_id = decoded.id;
 
         // Fetch user from DB

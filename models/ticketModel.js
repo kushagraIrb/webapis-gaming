@@ -2,7 +2,53 @@ const db = require('../config/database');
 const moment = require('moment-timezone');
 
 class TicketModel {
-  // Fetch ticket types
+    // Get distinct tokenNos with their latest update time
+    static async getLatestTicketEntries(userId) {
+        const query = `SELECT token_no, MAX(modified) AS latest_update FROM tbl_support_ticket WHERE userBy = ? AND status != 'Close' GROUP BY token_no`;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows;
+        } catch (error) {
+            console.error('Error fetching latest ticket entries:', error.message);
+            throw error;
+        }
+    }
+
+    // Get the latest entry for a given tokenNo
+    static async getLatestTicketByToken(tokenNo) {
+        const query = `
+            SELECT *
+            FROM tbl_support_ticket
+            WHERE token_no = ?
+            ORDER BY modified DESC
+            LIMIT 1
+        `;
+        try {
+            const [rows] = await db.promise().query(query, [tokenNo]);
+            return rows.length ? rows[0] : null;
+        } catch (error) {
+            console.error(`Error fetching latest ticket for tokenNo ${tokenNo}:`, error.message);
+            throw error;
+        }
+    }
+
+    // Close all ticket rows for the given tokenNos by setting status = 2 (Closed)
+    static async closeTicketsByTokenNos(tokenNos) {
+        if (!tokenNos.length) return 0;
+
+        const placeholders = tokenNos.map(() => '?').join(', ');
+        const query = `UPDATE tbl_support_ticket SET status = 'Close' WHERE token_no IN (${placeholders})`;
+
+        try {
+            const [result] = await db.promise().query(query, tokenNos);
+            return result.affectedRows;
+        } catch (error) {
+            console.error('Error closing old tickets:', error.message);
+            throw error;
+        }
+    }
+
+    // Fetch ticket types
     static async getTicketTypes() {
         try {
             const query = `SELECT tid, reason FROM tbl_support_reason WHERE status = 1 ORDER BY tid ASC`;
