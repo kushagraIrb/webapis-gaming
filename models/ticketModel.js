@@ -48,6 +48,18 @@ class TicketModel {
         }
     }
 
+    // Delete all 'Close' status tickets for a given user
+    static async deleteClosedTicketsByUser(userId) {
+        const query = `DELETE FROM tbl_support_ticket WHERE userBy = ? AND status = 'Close'`;
+        try {
+            const [result] = await db.promise().query(query, [userId]);
+            return result.affectedRows;
+        } catch (error) {
+            console.error('Error deleting closed tickets:', error.message);
+            throw error;
+        }
+    }
+
     // Fetch ticket types
     static async getTicketTypes() {
         try {

@@ -74,6 +74,7 @@ class TicketController {
 
             // Save ticket
             const result = await ticketService.saveTicket(ticketData);
+            return res.status(200).json(result);
             if (result) {
                 return res.status(201).json({ status: true, message: 'Ticket generated successfully!', token_no: result.tokenNo });
             } else {

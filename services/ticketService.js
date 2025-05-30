@@ -42,7 +42,10 @@ class TicketService {
     // Save a new ticket
     static async saveTicket(ticketData) {
         try {
-            // Insert the ticket into the database
+            // Step 1: Delete all tickets of this user where status = 'Close'
+            const deletedTicktes = await ticketModel.deleteClosedTicketsByUser(ticketData.userBy);
+
+            // Step 2: Insert the new ticket
             const insertResult = await ticketModel.insertTicket(ticketData);
 
             if (insertResult) {
