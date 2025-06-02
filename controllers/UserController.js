@@ -124,10 +124,10 @@ class UserController {
             if (req.body.last_name) 
                 userData.last_name = req.body.last_name; // Include only if present
 
-            const { msg, newAccessToken, newRefreshToken } = await userService.registerUser(userData, clientIp4);
+            const { msg, accessToken, refreshToken } = await userService.registerUser(userData, clientIp4);
 
             // Set refresh token in an HTTP-only cookie
-            res.cookie('refreshToken', newRefreshToken, {
+            res.cookie('refreshToken', refreshToken, {
                 // httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Strict',
@@ -135,7 +135,7 @@ class UserController {
             });
     
             // Send response back to the client
-            return res.status(200).send({ msg, newAccessToken });
+            return res.status(200).send({ msg, accessToken });
         } catch (error) {
             logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
             
