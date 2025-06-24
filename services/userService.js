@@ -43,11 +43,11 @@ class UserService {
         const mailSubject = 'Account Verification';
         const content = `
             <p>
-                Dear User, You have requested to register on Playcode as a Registered User. 
+                Dear User, You have requested to register on Gaming Helper Online as a Registered User. 
                 The confidential OTP to verify your email id is ${otp}. 
                 In case you have not requested the OTP, please ignore this email. 
                 The OTP is valid for 15 seconds only.<br><br>
-                Regards, Playcode Administrator <br>
+                Regards, Gaming Helper Online Administrator <br>
                 <b>Note:</b> This is a system-generated message, please do not reply to it.<br><br>
                 <b>Notice:</b> The information contained in this e-mail message and/or attachments may contain confidential or privileged information. 
                 If you are not the intended recipient, any dissemination, use, review, distribution, or copying is strictly prohibited. 
@@ -405,15 +405,15 @@ class UserService {
 
     static async sendResetEmail(email, name, resetLink) {
         try {
-            const mailSubject = `Password Reset for Playcode`;
+            const mailSubject = `Password Reset for Gaming Helper Online`;
             const content = `
                 <div style="text-align: center; font-family: Arial, sans-serif;">
-                    <h2>Playcode</h2>
+                    <h2>Gaming Helper Online</h2>
                     <p>Hello ${name},</p>
                     <p>We received a request to reset your password. You can reset it by clicking the link below:</p>
                     <a href="${resetLink}" style="background-color: #007bff; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
                     <p>If you didn't request this, please ignore this email.</p>
-                    <p>Thanks, <br> The Playcode Team</p>
+                    <p>Thanks, <br> The Gaming Helper Online Team</p>
                 </div>
             `;
     
