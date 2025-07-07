@@ -8,7 +8,7 @@ class CoinFlipModel {
             FROM tbl_upcoming_match_coinflip 
             WHERE 
                 status = 1 
-                AND final_result = '' 
+                AND final_result IS NULL
                 AND cancel = 1 
                 AND isLive = 1 
             LIMIT 1
