@@ -63,8 +63,8 @@ class UserService {
         return { msg: 'OTP has been sent successfully!' };
     }
 
-    static async checkNameExists(firstName, lastName) {
-        return await userModel.checkUserNameExists(firstName, lastName);
+    static async checkNameExists(firstName, lastName, userId = null) {
+        return await userModel.checkUserNameExists(firstName, lastName, userId);
     }
 
     static async generateNameSuggestions(firstName, lastName) {
@@ -86,6 +86,10 @@ class UserService {
                 { first_name: `${firstName}_${timestamp}` }
             ];
         }
+    }
+
+    static async updateUserName(userId, firstName, lastName) {
+        return await userModel.updateUserName(userId, firstName, lastName);
     }
 
     static async validateOtp(email, phone, otp) {

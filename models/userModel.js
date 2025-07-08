@@ -143,7 +143,7 @@ class UserModel {
         return 0;
     }
 
-    static async checkUserNameExists(firstName, lastName) {
+    static async checkUserNameExists(firstName, lastName, userId = null) {
         let query, params;
 
         if (lastName) {
@@ -162,8 +162,24 @@ class UserModel {
             params = [firstName];
         }
 
+        // If it's an existing user, exclude their own record
+        if (userId) {
+            query += ` AND id != ?`;
+            params.push(userId);
+        }
+
         const [rows] = await db.promise().query(query, params);
         return rows[0].count > 0;
+    }
+
+    static async updateUserName(userId, firstName, lastName) {
+        const query = `
+            UPDATE tbl_registration 
+            SET first_name = ?, last_name = ?
+            WHERE id = ?
+        `;
+        const [result] = await db.promise().query(query, [firstName, lastName, userId]);
+        return result.affectedRows > 0;
     }
 
     static async checkOtp(email, phone, otp) {

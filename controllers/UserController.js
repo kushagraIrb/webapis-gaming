@@ -70,13 +70,14 @@ class UserController {
     // Auto suggest name
     async checkNameAvailability(req, res) {
         try {
-            const { first_name, last_name } = req.body;
+            const { first_name, last_name, user_id } = req.body;
 
             if (!first_name) {
                 return res.status(400).json({ msg: 'First name is required.' });
             }
 
-            const nameExists = await userService.checkNameExists(first_name, last_name || '');
+            const nameExists = await userService.checkNameExists(first_name, last_name || '', user_id);
+
             if (nameExists) {
                 const suggestions = await userService.generateNameSuggestions(first_name, last_name || '');
                 return res.status(200).json({
@@ -92,6 +93,33 @@ class UserController {
             });
         } catch (error) {
             logger.error(`Error checking name availability: ${error.message}`, { stack: error.stack });
+            return res.status(500).json({ msg: 'Something went wrong.' });
+        }
+    }
+
+    async updateUserName(req, res) {
+        try {
+            const { user_id, first_name, last_name } = req.body;
+
+            if (!user_id || !first_name) {
+                return res.status(400).json({ msg: 'user_id and first_name are required.' });
+            }
+
+            const updated = await userService.updateUserName(user_id, first_name, last_name || '');
+
+            if (updated) {
+                return res.status(200).json({
+                    msg: 'Name updated successfully.',
+                    status: true
+                });
+            } else {
+                return res.status(404).json({
+                    msg: 'User not found or name not updated.',
+                    status: false
+                });
+            }
+        } catch (error) {
+            logger.error(`Error updating user name: ${error.message}`, { stack: error.stack });
             return res.status(500).json({ msg: 'Something went wrong.' });
         }
     }

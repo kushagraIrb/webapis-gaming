@@ -86,6 +86,75 @@
 
 /**
  * @swagger
+ * /api/update-name:
+ *   put:
+ *     summary: Update user's first and last name
+ *     description: >
+ *       Updates the `first_name` and `last_name` of an existing user identified by `user_id`.
+ *     tags:
+ *       - Users
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *               - first_name
+ *             properties:
+ *               user_id:
+ *                 type: integer
+ *                 example: 101
+ *               first_name:
+ *                 type: string
+ *                 example: Alicia
+ *               last_name:
+ *                 type: string
+ *                 example: Johnson
+ *     responses:
+ *       200:
+ *         description: Name updated successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 msg:
+ *                   type: string
+ *                   example: Name updated successfully.
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *       400:
+ *         description: Missing required fields.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 msg:
+ *                   type: string
+ *                   example: user_id and first_name are required.
+ *       404:
+ *         description: User not found or update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 msg:
+ *                   type: string
+ *                   example: User not found or name not updated.
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *       500:
+ *         description: Internal server error.
+ */
+
+/**
+ * @swagger
  * /api/users/send-otp:
  *   post:
  *     summary: Send OTP to user's phone
