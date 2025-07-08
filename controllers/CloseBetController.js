@@ -23,7 +23,7 @@ class closeBetController {
             }
     
             if (closedMatches.length === 0) {
-                return res.status(401).send({
+                return res.status(200).send({
                     status: true,
                     message: 'No closed matches available',
                     total: totalCount,
