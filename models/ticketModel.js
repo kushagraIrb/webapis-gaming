@@ -94,38 +94,83 @@ class TicketModel {
 
     // Fetch ticket history for a user
     static async getTicketHistory(userId, start, perPage) {
-        let query = `
+        const baseCondition = `
+            t.status IN ('Open', 'Processing')
+            AND t.id IN (
+                SELECT MAX(id)
+                FROM tbl_support_ticket
+                WHERE userBy = ?
+                GROUP BY token_no
+            )
+        `;
+
+        const dataQuery = `
             SELECT 
-                r.reason, 
-                t.id, 
-                t.token_no, 
-                t.issues, 
-                t.remarks, 
-                t.attachment, 
-                t.status, 
+                r.reason,
+                t.id,
+                t.token_no,
+                t.issues,
+                t.remarks,
+                t.attachment,
+                t.status,
                 t.modified
             FROM tbl_support_ticket t
             LEFT JOIN tbl_support_reason r ON r.tid = t.issues
-            WHERE t.id IN (
-                SELECT MAX(id) 
-                FROM tbl_support_ticket 
-                WHERE userBy = ? 
-                GROUP BY token_no
-            )
+            WHERE ${baseCondition}
             ORDER BY t.id DESC
+            LIMIT ?, ?
         `;
 
-        // Add pagination if required
-        if (perPage !== null && start !== null) {
-            query += ` LIMIT ?, ?`;
-            const [rows] = await db.promise().query(query, [userId, start, perPage]);
-            return rows;
-        }
+        const countQuery = `
+            SELECT COUNT(*) AS total
+            FROM tbl_support_ticket t
+            WHERE ${baseCondition}
+        `;
 
-        // Fetch all data if no pagination
-        const [rows] = await db.promise().query(query, [userId]);
-        return rows;
+        try {
+            const [dataRows] = await db.promise().query(dataQuery, [userId, start, perPage]);
+            const [countRows] = await db.promise().query(countQuery, [userId]);
+
+            return [dataRows, countRows[0]?.total || 0];
+        } catch (error) {
+            console.error('Error fetching filtered ticket history:', error.message);
+            throw error;
+        }
     }
+    
+    // static async getTicketHistory(userId, start, perPage) {
+    //     let query = `
+    //         SELECT 
+    //             r.reason, 
+    //             t.id, 
+    //             t.token_no, 
+    //             t.issues, 
+    //             t.remarks, 
+    //             t.attachment, 
+    //             t.status, 
+    //             t.modified
+    //         FROM tbl_support_ticket t
+    //         LEFT JOIN tbl_support_reason r ON r.tid = t.issues
+    //         WHERE t.id IN (
+    //             SELECT MAX(id) 
+    //             FROM tbl_support_ticket 
+    //             WHERE userBy = ? 
+    //             GROUP BY token_no
+    //         )
+    //         ORDER BY t.id DESC
+    //     `;
+
+    //     // Add pagination if required
+    //     if (perPage !== null && start !== null) {
+    //         query += ` LIMIT ?, ?`;
+    //         const [rows] = await db.promise().query(query, [userId, start, perPage]);
+    //         return rows;
+    //     }
+
+    //     // Fetch all data if no pagination
+    //     const [rows] = await db.promise().query(query, [userId]);
+    //     return rows;
+    // }
 
     static async insertTicketReply(ticketData) {
         const indiaTime = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');

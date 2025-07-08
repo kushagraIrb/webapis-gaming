@@ -55,7 +55,8 @@ class TicketService {
     static async getTicketHistory(userId, page, perPage) {
         try {
             const start = (page - 1) * perPage;
-            return await ticketModel.getTicketHistory(userId, start, perPage);
+            const [rows, count] = await ticketModel.getTicketHistory(userId, start, perPage);
+            return [rows, count]; 
         } catch (error) {
             console.error('Error fetching ticket history:', error.message);
             throw new Error('Failed to fetch ticket history');

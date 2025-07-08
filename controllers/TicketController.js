@@ -101,11 +101,12 @@ class TicketController {
             const { page = 1, perPage = 10 } = req.query;
 
             // Fetch ticket history
-            const ticketHistory = await ticketService.getTicketHistory(userId, Number(page), Number(perPage));
+            const [data, total] = await ticketService.getTicketHistory(userId, Number(page), Number(perPage));
 
             return res.status(200).send({
                 status: true,
-                data: ticketHistory,
+                data,
+                count: total,
                 message: 'ticket history fetched successfully',
             });
         } catch (error) {
