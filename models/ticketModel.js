@@ -2,37 +2,19 @@ const db = require('../config/database');
 const moment = require('moment-timezone');
 
 class TicketModel {
-    // Get distinct tokenNos with their latest update time
-    static async getLatestTicketEntries(userId) {
-        const query = `SELECT token_no, MAX(modified) AS latest_update FROM tbl_support_ticket WHERE userBy = ? AND status != 'Close' GROUP BY token_no`;
-        try {
-            const [rows] = await db.promise().query(query, [userId]);
-            return rows;
-        } catch (error) {
-            console.error('Error fetching latest ticket entries:', error.message);
-            throw error;
-        }
-    }
+    // Delete Ticket
+    static async getTicketById(ticketId) {
+        const query = `SELECT * FROM tbl_support_ticket WHERE id = ? LIMIT 1`;
 
-    // Get the latest entry for a given tokenNo
-    static async getLatestTicketByToken(tokenNo) {
-        const query = `
-            SELECT *
-            FROM tbl_support_ticket
-            WHERE token_no = ?
-            ORDER BY modified DESC
-            LIMIT 1
-        `;
         try {
-            const [rows] = await db.promise().query(query, [tokenNo]);
+            const [rows] = await db.promise().query(query, [ticketId]);
             return rows.length ? rows[0] : null;
         } catch (error) {
-            console.error(`Error fetching latest ticket for tokenNo ${tokenNo}:`, error.message);
+            console.error('Error fetching ticket by ID:', error.message);
             throw error;
         }
     }
 
-    // Close all ticket rows for the given tokenNos by setting status = 2 (Closed)
     static async closeTicketsByTokenNos(tokenNos) {
         if (!tokenNos.length) return 0;
 

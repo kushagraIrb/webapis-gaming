@@ -13,7 +13,7 @@ router.use(authenticateToken);
 
 router.get('/types', ticketController.fetchTicketTypes);
 
-router.put('/close-old', ticketController.closeOldTickets);
+router.put('/close-ticket/:ticket_id', ticketController.closeTicketById);
 
 router.post('/save', upload.single('screenshort'), ticketController.saveTicket);
 router.get('/history', ticketController.fetchTicketHistory);

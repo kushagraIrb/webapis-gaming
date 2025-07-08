@@ -2,29 +2,20 @@ const ticketModel = require('../models/ticketModel');
 const moment = require('moment-timezone');
 
 class TicketService {
-    // Delete Old Tickets
-    static async closeOldTickets(userId) {
+    // Delete Old Ticket
+    static async closeTicketById(ticketId) {
         try {
-            const tokenList = await ticketModel.getLatestTicketEntries(userId);
+            const ticket = await ticketModel.getTicketById(ticketId);
 
-            const eligibleTokenNos = [];
-
-            const oneDayAgo = moment().tz("Asia/Kolkata").subtract(1, 'days').format("YYYY-MM-DD HH:mm:ss");
-
-            for (const row of tokenList) {
-                const latestEntry = await ticketModel.getLatestTicketByToken(row.token_no);
-                const updatedAtIST = moment(latestEntry.modified).tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-                if (latestEntry && updatedAtIST < oneDayAgo && latestEntry.read_by_user == 1) {
-                    eligibleTokenNos.push(row.token_no);
-                }
+            if (!ticket || !ticket.token_no) {
+                throw new Error('Ticket not found or missing token number.');
             }
 
-            const closedCount = await ticketModel.closeTicketsByTokenNos(eligibleTokenNos);
+            const closedCount = await ticketModel.closeTicketsByTokenNos([ticket.token_no]);
 
             return { closedCount };
         } catch (error) {
-            console.error('Error deleting old tickets in service:', error.message);
+            console.error('Error in service while closing ticket:', error.message);
             throw error;
         }
     }

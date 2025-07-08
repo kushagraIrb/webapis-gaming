@@ -1,19 +1,25 @@
 /**
  * @swagger
- * /api/ticket/close-old:
+ * /api/ticket/close-ticket/{ticket_id}:
  *   put:
- *     summary: Close old tickets based on criteria
+ *     summary: Close a ticket by ticket ID
  *     description: >
- *       Closes all tickets grouped by token number where:
- *       - The latest entry per token is older than 1 day (based on IST timezone), and
- *       - The latest entry has `read_by_user = 1`.
- *       Closing a ticket means updating the status to 2 (Closed).
- *       User ID is inferred from the authenticated session or token.
+ *       Closes all support ticket rows associated with the token number of the provided `ticket_id`.
+ *       This is useful when a ticket has multiple entries, and all need to be marked as Closed together.
+ *       Closing a ticket means updating the status to `'Close'` for all entries sharing the same token number.
  *     tags:
  *       - Ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticket_id
+ *         required: true
+ *         description: Unique ID of the ticket to close (used to find related token_no).
+ *         schema:
+ *           type: integer
+ *           example: 12345
  *     responses:
  *       200:
- *         description: Successfully closed old tickets.
+ *         description: Successfully closed the ticket and its related entries.
  *         content:
  *           application/json:
  *             schema:
@@ -24,14 +30,16 @@
  *                   example: true
  *                 closedCount:
  *                   type: integer
- *                   example: 5
+ *                   example: 3
  *                 message:
  *                   type: string
- *                   example: "Old tickets closed successfully"
- *       204:
- *         description: No eligible old tickets found for closure.
+ *                   example: "Ticket closed successfully."
+ *       400:
+ *         description: Bad request. Ticket ID missing or invalid.
  *       401:
  *         description: Unauthorized. User is not authenticated.
+ *       404:
+ *         description: Ticket not found.
  *       500:
  *         description: Internal server error.
  */

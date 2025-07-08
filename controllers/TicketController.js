@@ -2,28 +2,29 @@ const { logger } = require('../logger');
 const ticketService = require('../services/ticketService');
 
 class TicketController {
-    // Delete Old Tickets
-    async closeOldTickets(req, res) {
+    // Delete Ticket
+    async closeTicketById(req, res) {
         try {
-            const userId = req.user_id;
+            const { ticket_id } = req.params;
 
-            if (!userId) {
-                return res.status(400).send({ msg: 'User ID is required!' });
+            if (!ticket_id) {
+                return res.status(400).json({ status: false, message: 'Ticket ID is required!' });
             }
-            
-            const result = await ticketService.closeOldTickets(userId);
+
+            const result = await ticketService.closeTicketById(ticket_id);
 
             return res.status(200).json({
                 status: true,
-                message: `${result.closedCount} old tickets closed successfully.`,
+                message: `Ticket closed successfully.`,
+                closedCount: result.closedCount,
             });
         } catch (error) {
-            console.error('Error deleting old tickets:', error.message);
-            logger.error(`Error deleting old tickets: ${error.message}`, { stack: error.stack });
+            console.error('Error closing ticket by ID:', error.message);
+            logger.error(`Error closing ticket by ID: ${error.message}`, { stack: error.stack });
 
             return res.status(500).json({
                 status: false,
-                message: 'Something went wrong while deleting tickets. Please try again.',
+                message: 'Something went wrong while closing the ticket.',
             });
         }
     }
