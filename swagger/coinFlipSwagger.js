@@ -54,6 +54,47 @@
 
 /**
  * @swagger
+ * /api/coin-flip/user-bet-history:
+ *   get:
+ *     summary: "Get user's coin flip bet history"
+ *     description: "Retrieve the latest 5 coin flip bets for the authenticated user. Includes amount, prediction, final match result, and whether the user won or lost."
+ *     tags:
+ *       - Coin Flip
+ *     security:
+ *       - bearerAuth: []  # Assuming you're using bearer token authentication
+ *     responses:
+ *       200:
+ *         description: "User bet history successfully retrieved"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   amount:
+ *                     type: number
+ *                     example: 50
+ *                   prediction:
+ *                     type: string
+ *                     enum: [Heads, Tails]
+ *                     example: Heads
+ *                   final_result:
+ *                     type: string
+ *                     enum: [Heads, Tails]
+ *                     example: Heads
+ *                   result:
+ *                     type: string
+ *                     enum: [Win, Loss]
+ *                     example: Win
+ *       401:
+ *         description: "Unauthorized access"
+ *       500:
+ *         description: "Internal server error"
+ */
+
+/**
+ * @swagger
  * /api/coin-flip/save-bet:
  *   post:
  *     summary: "Place a coin flip bet"

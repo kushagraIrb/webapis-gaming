@@ -53,6 +53,24 @@ class CoinFlipController {
         }
     }
 
+    async userBetHistory(req, res) {
+        try {
+            const user_id = req.user_id;
+
+            if (!user_id) {
+                return res.status(401).json({ msg: 'Invalid user.' });
+            }
+
+            const betHistory = await coinFlipService.userBetHistory(user_id);
+            return res.status(200).send(betHistory);
+        } catch (error) {
+            console.error('Error fetching user bet history:', error.message);
+            logger.error(`Error fetching user bet history: ${error.message}`, { stack: error.stack });
+
+            return res.status(500).send({ msg: 'An error occurred', error: error.message });
+        }
+    }
+
     async saveCoinBet(req, res) {
         try {
             const user_id = req.user_id;

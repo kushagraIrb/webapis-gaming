@@ -46,6 +46,21 @@ class CoinFlipService {
     }
   }
 
+  static async userBetHistory(user_id) {
+    try {
+        const history = await coinFlipModel.fetchUserBetHistory(user_id);
+
+      return history.map(item => ({
+        amount: item.amount,
+        prediction: item.prediction,
+        final_result: item.final_result,
+        result: item.prediction === item.final_result ? 'Win' : 'Loss'
+      }));
+    } catch (error) {
+      throw new Error('Failed to get bet history.');
+    }
+  }
+
   static async checkBettingStatus() {
     try {
         return await coinFlipModel.getBettingStatus();

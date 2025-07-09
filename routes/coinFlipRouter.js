@@ -9,6 +9,9 @@ router.use(authenticateToken);
 
 router.get('/current-match', coinFlipController.currentMatchDetails);
 router.get('/user-past-results', coinFlipController.userPastResults);
+
+router.get('/user-bet-history', coinFlipController.userBetHistory);
+
 router.get('/save-bet', coinFlipController.saveCoinBet);
 
 router.post('/create-winner', coinFlipController.createWinner);

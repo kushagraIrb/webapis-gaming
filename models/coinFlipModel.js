@@ -77,6 +77,29 @@ class CoinFlipModel {
         }
     }
 
+    static async fetchUserBetHistory(user_id) {
+        const query = `
+            SELECT 
+                b.amount, 
+                b.prediction, 
+                b.match_id, 
+                m.final_result
+            FROM tbl_coin_bet b
+            JOIN tbl_upcoming_match_coinflip m ON b.match_id = m.id
+            WHERE b.user_id = ?
+            ORDER BY b.bet_date DESC
+            LIMIT 5
+        `;
+
+        try {
+            const [rows] = await db.promise().query(query, [user_id]);
+            return rows;
+        } catch (error) {
+            console.error('Error fetching user bet history:', error.message);
+            throw new Error('Failed to fetch user bet history.');
+        }
+    }
+
     static async getBettingStatus() {
         // const query = `SELECT on_off_value FROM tbl_bet_on_off `;
         const query = `SELECT * FROM tbl_website_on_off WHERE id = 1`;
