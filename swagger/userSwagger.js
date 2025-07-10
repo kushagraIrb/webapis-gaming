@@ -86,7 +86,7 @@
 
 /**
  * @swagger
- * /api/update-name:
+ * /api/users/update-name:
  *   put:
  *     summary: Update user's first and last name
  *     description: >
