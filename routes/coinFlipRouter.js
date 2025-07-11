@@ -14,6 +14,6 @@ router.get('/user-past-results', coinFlipController.userPastResults);
 
 router.get('/user-bet-history', coinFlipController.userBetHistory);
 
-router.post('/save-bet', coinFlipController.saveCoinBet);
+router.get('/save-bet', coinFlipController.saveCoinBet);
 
 module.exports = router;
