@@ -129,30 +129,55 @@ class CoinFlipService {
     }
   }
 
+  // static async isMatchOver(userId, matchId) {
+  //   try {
+  //     const matchDetails = await coinFlipModel.getMatchTime(userId, matchId);
+  
+  //     if (!matchDetails || matchDetails.length === 0) {
+  //       throw new Error('Match not found');
+  //     }
+  
+  //     const { bet_date, match_date, match_time } = matchDetails[0];
+  
+  //     const moment = require('moment-timezone');
+  //     const now = moment().tz('Asia/Kolkata');
+  
+  //     // Convert bet_date and add 60 seconds
+  //     const betDatePlus60Sec = moment(bet_date).tz('Asia/Kolkata').add(60, 'seconds');
+  
+  //     // Merge match_date + match_time into one datetime
+  //     const matchDateTime = moment(`${match_date} ${match_time}`, 'YYYY-MM-DD HH:mm:ss').tz('Asia/Kolkata');
+  
+  //     const isMatchOver = matchDateTime.isBefore(now);
+  //     const isWithin60SecAfterBet = now.isBefore(betDatePlus60Sec);
+  
+  //     return { isMatchOver, isWithin60SecAfterBet };
+  
+  //   } catch (error) {
+  //     throw new Error(`Error checking match status: ${error.message}`);
+  //   }
+  // }
+
   static async isMatchOver(userId, matchId) {
     try {
       const matchDetails = await coinFlipModel.getMatchTime(userId, matchId);
-  
+
       if (!matchDetails || matchDetails.length === 0) {
         throw new Error('Match not found');
       }
-  
-      const { bet_date, match_date, match_time } = matchDetails[0];
-  
+
+      const { match_date, match_time } = matchDetails[0];
+
       const moment = require('moment-timezone');
       const now = moment().tz('Asia/Kolkata');
-  
-      // Convert bet_date and add 60 seconds
-      const betDatePlus60Sec = moment(bet_date).tz('Asia/Kolkata').add(60, 'seconds');
-  
-      // Merge match_date + match_time into one datetime
+
+      // Combine match date and time
       const matchDateTime = moment(`${match_date} ${match_time}`, 'YYYY-MM-DD HH:mm:ss').tz('Asia/Kolkata');
-  
+
       const isMatchOver = matchDateTime.isBefore(now);
-      const isWithin60SecAfterBet = now.isBefore(betDatePlus60Sec);
-  
-      return { isMatchOver, isWithin60SecAfterBet };
-  
+
+      return { isMatchOver };
+
     } catch (error) {
       throw new Error(`Error checking match status: ${error.message}`);
     }

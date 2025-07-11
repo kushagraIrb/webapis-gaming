@@ -177,22 +177,33 @@ class CoinFlipModel {
         }
     }
 
+    // static async getMatchTime(userId, matchId) {
+    //     try {
+    //       const query = `
+    //         SELECT 
+    //           (SELECT bet_date FROM tbl_coin_bet WHERE user_id = ? ORDER BY bet_id DESC LIMIT 1) AS bet_date,
+    //           match_date,
+    //           match_time
+    //         FROM tbl_upcoming_match_coinflip
+    //         WHERE id = ?
+    //       `;
+    //       const [result] = await db.promise().query(query, [userId, matchId]);
+    //       return result || null;
+    //     } catch (error) {
+    //       throw new Error(`Error retrieving match details: ${error.message}`);
+    //     }
+    // }
+
     static async getMatchTime(userId, matchId) {
         try {
-          const query = `
-            SELECT 
-              (SELECT bet_date FROM tbl_coin_bet WHERE user_id = ? ORDER BY bet_id DESC LIMIT 1) AS bet_date,
-              match_date,
-              match_time
-            FROM tbl_upcoming_match_coinflip
-            WHERE id = ?
-          `;
-          const [result] = await db.promise().query(query, [userId, matchId]);
-          return result || null;
+            const query = `SELECT match_date, match_time FROM tbl_upcoming_match_coinflip WHERE id = ?`;
+            const [result] = await db.promise().query(query, [matchId]);
+            return result || null;
         } catch (error) {
-          throw new Error(`Error retrieving match details: ${error.message}`);
+            throw new Error(`Error retrieving match details: ${error.message}`);
         }
     }
+
 
     // Place a bet and insert the bet data into the tbl_bet table
     static async saveCoinBet(betData) {

@@ -86,12 +86,18 @@ class CoinFlipController {
                 coinFlipService.isMatchOver(user_id, match_id),
                 coinFlipService.checkBettingStatus()
             ]);
-    
-            if (matchStatus.isMatchOver < matchStatus.isWithin60SecAfterBet) {
+
+            if (matchStatus.isMatchOver) {
                 return res.status(401).json({
                     message: 'Sorry! This match is already over. Money not deducted. Try again.',
                 });
             }
+    
+            // if (matchStatus.isMatchOver < matchStatus.isWithin60SecAfterBet) {
+            //     return res.status(401).json({
+            //         message: 'Sorry! This match is already over. Money not deducted. Try again.',
+            //     });
+            // }
     
             if (betStatus === '0') {
                 return res.status(401).json({ message: 'Betting is currently off.' });
