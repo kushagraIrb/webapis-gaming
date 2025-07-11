@@ -363,7 +363,7 @@ class CoinFlipModel {
               SELECT * FROM tbl_upcoming_match_coinflip
               WHERE status = 1
               AND match_date = ?
-              AND match_time < ?
+              AND match_time <= ?
               ORDER BY id DESC
               LIMIT 1
             `;
