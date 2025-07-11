@@ -1,5 +1,6 @@
 const { logger } = require('../logger');
 const coinFlipService = require('../services/coinFlipService');
+require('dotenv').config();
 
 class CoinFlipController {
     async currentMatchDetails(req, res) {
@@ -218,20 +219,27 @@ class CoinFlipController {
     // Give winning to the users who all won
     async createWinner(req, res) { 
         try {
-          const matchResult = await coinFlipService.getEligibleMatch();
-      
-          if (!matchResult) {
-            return res.status(200).send({ message: 'No eligible match to process.' });
-          }
-      
-          await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
-      
-          return res.status(200).send('Match result processed and winnings distributed.');
-      
-        } catch (error) {
-          console.error('Error in createWinner:', error.message);
-          return res.status(500).send({ msg: 'Error occurred', error: error.message });
-        }
+            // 🔒 Token check
+            const token = req.query.token || req.headers['x-auth-token'];
+
+            if (token !== process.env.COINFLIP_SECRET_KEY) {
+                return res.status(403).json({ message: 'Unauthorized request' });
+            }
+
+            const matchResult = await coinFlipService.getEligibleMatch();
+        
+            if (!matchResult) {
+                return res.status(200).send({ message: 'No eligible match to process.' });
+            }
+        
+            await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+        
+            return res.status(200).send('Match result processed and winnings distributed.');
+        
+            } catch (error) {
+            console.error('Error in createWinner:', error.message);
+            return res.status(500).send({ msg: 'Error occurred', error: error.message });
+            }
     }
 }
 
