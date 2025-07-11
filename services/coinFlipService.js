@@ -318,7 +318,7 @@ class CoinFlipService {
       }
 
       // ✅ Create new game after winnings processed
-      await createGame();
+      await this.createGame();
   
     } catch (error) {
       throw new Error('Error in giveWinnings: ' + error.message);
