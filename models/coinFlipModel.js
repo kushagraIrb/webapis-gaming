@@ -200,13 +200,13 @@ class CoinFlipModel {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-            const query = `INSERT INTO tbl_coin_bet (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date) VALUES (?, ?, ?, ?, ?, ?)`;
+            const query = `INSERT INTO tbl_coin_bet (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date) VALUES (?, ?, ?, ?, ?, ?, ?)`;
             const [result] = await db.promise().query(query, [
                 betData.user_id,
                 betData.match_id,
                 betData.amount,
-                betData.bonus_amount,
-                betData.wallet_amount,
+                betData.bonusAmount,
+                betData.walletAmount,
                 betData.prediction,
                 istTime
             ]);
@@ -246,7 +246,7 @@ class CoinFlipModel {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-            const query = `INSERT INTO tbl_report (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+            const query = `INSERT INTO tbl_coin_report (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?)`;
             const [result] = await db.promise().query(query, 
                 [
                     reportData.bet_id, 
