@@ -12,7 +12,7 @@ var db = require('./config/database');
 const setupRoutes = require('./config/routes');
 const { checkIPAccess, checkIPAccessStatus } = require('./helpers/checkIpAccess.js');
 
-const coinFlipCron = require('./helpers/coinFlipCron.js');
+require('./helpers/coinFlipCron.js');
 
 // Run cleanup every 24 hours
 setInterval(() => {

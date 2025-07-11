@@ -283,43 +283,47 @@ class CoinFlipService {
   static async giveWinnings(match, result) {
     try {
       const { id: matchId, win_ratio } = match;
-  
+
       const winUsers = await coinFlipModel.getWinningUsers(matchId, result);
-  
-      for (const bet of winUsers) {
-        const userId = bet.user_id;
-        const amount = parseFloat(bet.amount);
-  
-        const winAmount = (win_ratio / 100) * amount;
-        const totalUserAmount = amount + winAmount;
-  
-        const currentWallet = await this.calculateWalletAmount(userId);
-        const newWallet = currentWallet + totalUserAmount;
-  
-        const winnerData = {
-          win_ratio,
-          match_id: matchId,
-          userBy: userId,
-        };
-        const winId = await coinFlipModel.insertCoinWinner(winnerData);
-  
-        const txnData = {
-          match_id: matchId,
-          coin_match_id: matchId,
-          win_id: winId,
-          user_id: userId,
-          credit_amount: totalUserAmount,
-          total_amount: newWallet,
-          type: 'Credit',
-          t_status: 'Win',
-        };
-        await coinFlipModel.insertTransaction(txnData);
-        await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount);
+
+      if (winUsers && winUsers.length > 0) {
+        for (const bet of winUsers) {
+          const userId = bet.user_id;
+          const amount = parseFloat(bet.amount);
+
+          const winAmount = (win_ratio / 100) * amount;
+          const totalUserAmount = amount + winAmount;
+
+          const currentWallet = await this.calculateWalletAmount(userId);
+          const newWallet = currentWallet + totalUserAmount;
+
+          const winnerData = {
+            win_ratio,
+            match_id: matchId,
+            userBy: userId,
+          };
+          const winId = await coinFlipModel.insertCoinWinner(winnerData);
+
+          const txnData = {
+            match_id: matchId,
+            coin_match_id: matchId,
+            win_id: winId,
+            user_id: userId,
+            credit_amount: totalUserAmount,
+            total_amount: newWallet,
+            type: 'Credit',
+            t_status: 'Win',
+          };
+          await coinFlipModel.insertTransaction(txnData);
+          await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount);
+        }
+      } else {
+        console.log(`No winners for match ${matchId} with result ${result}.`);
       }
 
-      // ✅ Create new game after winnings processed
+      // ✅ This will now ALWAYS execute
       await this.createGame();
-  
+
     } catch (error) {
       throw new Error('Error in giveWinnings: ' + error.message);
     }

@@ -469,10 +469,7 @@ class CoinFlipModel {
     // Fetch repeatable matches
     static async getRepeatableMatches() {
         try {
-            const query = `
-                SELECT * FROM tbl_upcoming_match_coinflip 
-                WHERE repeat > 0 AND copyof = 0
-            `;
+            const query = `SELECT * FROM tbl_upcoming_match_coinflip WHERE \`repeat\` > 0 AND copyof = 0`;
             const [rows] = await db.promise().query(query);
             return rows;
         } catch (error) {
@@ -511,9 +508,9 @@ class CoinFlipModel {
             const query = `
                 INSERT INTO tbl_upcoming_match_coinflip 
                 (match_name, match_date, match_time, isHomePage, match_title, match_sub_title, 
-                match_address, win_ratio, status, isLive, cancel, result, final_result, repeat, 
+                match_address, win_ratio, status, isLive, cancel, result, final_result, \`repeat\`, 
                 userBy, modified, archive, copyof, created)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             
             await db.promise().query(query, [
