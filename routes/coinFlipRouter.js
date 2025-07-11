@@ -4,6 +4,8 @@ const router = express.Router();
 const coinFlipController = require('../controllers/CoinFlipController');
 const authenticateToken = require('../helpers/authToken');
 
+router.post('/create-winner', coinFlipController.createWinner);
+
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
@@ -13,7 +15,5 @@ router.get('/user-past-results', coinFlipController.userPastResults);
 router.get('/user-bet-history', coinFlipController.userBetHistory);
 
 router.get('/save-bet', coinFlipController.saveCoinBet);
-
-router.post('/create-winner', coinFlipController.createWinner);
 
 module.exports = router;
