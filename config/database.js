@@ -1,5 +1,6 @@
 const { DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME } = process.env;
 const mysql = require('mysql2');
+const cluster = require('cluster');
 
 const pool = mysql.createPool({
     host: DB_HOST,
@@ -7,19 +8,23 @@ const pool = mysql.createPool({
     password: DB_PASSWORD,
     database: DB_NAME,
     waitForConnections: true,
-    connectionLimit: 10, // Number of simultaneous connections
-    queueLimit: 0, // No limit on the number of requests queued
+    connectionLimit: 10,
+    queueLimit: 0,
     timezone: 'Z'
 });
 
-pool.getConnection((err, connection) => {
-    if (err) {
-        console.error('Error connecting to the database:', err);
-        process.exit(1); // Exit the application on a critical error
-    } else {
-        console.log(`${DB_NAME} database connected successfully`);
-        connection.release(); // Release the connection back to the pool
-    }
-});
+if (cluster.isWorker) {
+    pool.getConnection((err, connection) => {
+        if (err) {
+            console.error(`[WORKER ${process.pid}] Error connecting to the database:`, err);
+            process.exit(1); // Exit the worker on DB connection failure
+        } else {
+            console.log(`[WORKER ${process.pid}] ${DB_NAME} database connected successfully`);
+            connection.release();
+        }
+    });
+} else {
+    console.log(`[MASTER ${process.pid}] Skipping DB connection in master process`);
+}
 
 module.exports = pool;

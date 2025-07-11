@@ -1,78 +1,99 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-let cookieParser = require('cookie-parser'); 
-/* Require cors (Cross Origin Resource Sharing) module for allowing resources (like fonts, images, APIs, etc.) on a web server to be requested by another domain (origin) different from the server's own domain */
+const os = require('os');
+const cluster = require('cluster');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
-/* Require to include the body-parser middleware, which is necessary to handle incoming request bodies */
 const bodyParser = require('body-parser');
-const { swaggerUi, swaggerDocs } = require('./config/swagger.js'); // Import the Swagger setup
-const { logger, deleteOldLogs } = require('./logger.js'); // Import the Winston logger
-var db = require('./config/database');
-const setupRoutes = require('./config/routes');
+const { swaggerUi, swaggerDocs } = require('./config/swagger.js');
+const { logger, deleteOldLogs } = require('./logger.js');
+const db = require('./config/database.js');
+const setupRoutes = require('./config/routes.js');
 const { checkIPAccess, checkIPAccessStatus } = require('./helpers/checkIpAccess.js');
 
-require('./helpers/coinFlipCron.js');
-
-// Run cleanup every 24 hours
-setInterval(() => {
-    deleteOldLogs('errors');
-    deleteOldLogs('info');
-}, 86400000);
-
-const app = express();
-
-app.use(express.json());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended:true }));
-app.use(cors());
-app.use(cookieParser()); 
-
-// Use the Swagger setup
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
-
-// Middleware to log all incoming requests
-app.use((req, res, next) => {
-    logger.info(`Request received: ${req.method} ${req.url}`);
-    next();
-});
-
-// Global Error Handling Middleware (Prevents Crashes)
-app.use((err, req, res, next) => {
-    logger.error(`Error: ${err.message}`, { stack: err.stack });
-    res.status(500).json({ msg: 'An internal server error occurred' });
-});
-
-// Handle uncaught exceptions (Prevents Crashes)
-process.on('uncaughtException', (err) => {
-    logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });
-    // Do not exit the process
-});
-
-// Handle unhandled promise rejections (Prevents Crashes)
-process.on('unhandledRejection', (reason, promise) => {
-    logger.error(`Unhandled Rejection: ${reason}`);
-});
-
-app.use(checkIPAccess);
-setupRoutes(app);
-
-// API specifically for checking IP status
-app.get('/api/check-ip', checkIPAccessStatus);
-
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Ensure Unhandled Route Errors Are Caught
-app.use((req, res, next) => {
-    const error = new Error(`Not Found - ${req.originalUrl}`);
-    res.status(404);
-    logger.error(error.message);
-    next(error);
-});
-
+const numCPUs = os.cpus().length;
 const port = process.env.SERVER_PORT || 3000;
 const host = process.env.SERVER_HOST || 'localhost';
 
-app.listen(port, function(){
-    console.log(`App listening at http://${host}:${port}/`);
-});
+if (cluster.isMaster) {
+    console.log(`[MASTER ${process.pid}] Starting master process`);
+
+    // Run the coin flip cron job only in the master process
+    require('./helpers/coinFlipCron.js');
+
+    // Run log cleanup every 24 hours
+    setInterval(() => {
+        deleteOldLogs('errors');
+        deleteOldLogs('info');
+    }, 86400000);
+
+    // Fork workers
+    for (let i = 0; i < numCPUs; i++) {
+        cluster.fork();
+    }
+
+    // Restart dead workers
+    cluster.on('exit', (worker, code, signal) => {
+        logger.error(`Worker ${worker.process.pid} died. Starting a new one...`);
+        cluster.fork();
+    });
+
+} else {
+    const app = express();
+
+    // Middleware setup
+    app.use(express.json());
+    app.use(bodyParser.json());
+    app.use(bodyParser.urlencoded({ extended: true }));
+    app.use(cors());
+    app.use(cookieParser());
+
+    // Swagger API docs
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+
+    // Request logger
+    app.use((req, res, next) => {
+        logger.info(`Request received: ${req.method} ${req.url}`);
+        next();
+    });
+
+    // IP access middleware and routes
+    app.use(checkIPAccess);
+    setupRoutes(app);
+
+    // IP access check endpoint
+    app.get('/api/check-ip', checkIPAccessStatus);
+
+    // Static uploads
+    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+    // Handle 404s
+    app.use((req, res, next) => {
+        const error = new Error(`Not Found - ${req.originalUrl}`);
+        res.status(404);
+        logger.error(error.message);
+        next(error);
+    });
+
+    // Global error handler
+    app.use((err, req, res, next) => {
+        logger.error(`Error: ${err.message}`, { stack: err.stack });
+        res.status(500).json({ msg: 'An internal server error occurred' });
+    });
+
+    // Uncaught exception handler
+    process.on('uncaughtException', (err) => {
+        logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });
+    });
+
+    // Unhandled rejection handler
+    process.on('unhandledRejection', (reason, promise) => {
+        logger.error(`Unhandled Rejection: ${reason}`);
+    });
+
+    // Start server
+    app.listen(port, () => {
+        console.log(`[WORKER ${process.pid}] App listening at http://${host}:${port}/`);
+    });
+}
