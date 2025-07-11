@@ -501,9 +501,15 @@ class CoinFlipModel {
             // Get the current time in IST timezone
             const istTime = moment().tz("Asia/Kolkata");
 
-            // Format match_date and match_time
-            const matchDate = istTime.format("YYYY-MM-DD");
-            const matchTime = istTime.add(newGameData.repeat, 'seconds').format("HH:mm:ss");
+            // Add 30 seconds to the current time
+            const futureTime = istTime.clone().add(30, 'seconds');
+
+            // Extract updated date and time
+            const matchDate = futureTime.format("YYYY-MM-DD");
+            const matchTime = futureTime.format("HH:mm:ss");
+
+            // const matchDate = istTime.format("YYYY-MM-DD");
+            // const matchTime = istTime.add(newGameData.repeat, 'seconds').format("HH:mm:ss");
 
             const query = `
                 INSERT INTO tbl_upcoming_match_coinflip 
