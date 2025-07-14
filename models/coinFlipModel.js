@@ -349,8 +349,8 @@ class CoinFlipModel {
             const [result] = await db.promise().query(query, [
                 walletHistory.bet_id, 
                 walletHistory.match_id,
-                walletHistory.match_id,
                 walletHistory.user_id, 
+                walletHistory.match_id,
                 walletHistory.debit_amount, 
                 walletHistory.total_amount, 
                 walletHistory.type, 
