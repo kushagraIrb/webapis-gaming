@@ -422,8 +422,8 @@ class CoinFlipModel {
         try {
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
             const query = `
-              INSERT INTO tbl_coin_winner (win_ratio, match_id, userBy, win_date)
-              VALUES (?, ?, ?, ?)
+              INSERT INTO tbl_coin_winner (win_ratio, match_id, team_id, userBy, win_date)
+              VALUES (?, ?, 0, ?, ?)
             `;
             const [result] = await db.promise().query(query, [
                 data.win_ratio,
