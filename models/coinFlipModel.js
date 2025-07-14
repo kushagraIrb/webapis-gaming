@@ -42,7 +42,7 @@ class CoinFlipModel {
 
     static async fetchPastResults(copyof) {
         const query = `
-            SELECT final_result 
+            SELECT final_result, created
             FROM tbl_upcoming_match_coinflip 
             WHERE (copyof = ? OR id = ?) 
             AND status = 2 

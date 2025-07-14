@@ -23,7 +23,10 @@ class CoinFlipService {
   static async getPastResults(copyof) {
     try {
       const results = await coinFlipModel.fetchPastResults(copyof);
-      return results.map(row => row.final_result);
+      return results.map(row => ({
+        final_result: row.final_result,
+        created: row.created
+      }));
     } catch (error) {
       throw new Error('Failed to get past results.');
     }
