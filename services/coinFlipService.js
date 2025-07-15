@@ -353,10 +353,6 @@ class CoinFlipService {
       } else {
         console.log(`No winners for match ${matchId} with result ${result}.`);
       }
-
-      // ✅ This will now ALWAYS execute
-      await this.createGame();
-
     } catch (error) {
       const message = 'Service: giveWinnings - ' + error.message;
       console.error(message);
