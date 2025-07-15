@@ -242,11 +242,11 @@ class CoinFlipController {
         
             return res.status(200).send('Match result processed and winnings distributed.');
         
-            } catch (error) {
-                console.error('Error in createWinner:', error.message);
-                logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
-                return res.status(500).send({ msg: 'Error occurred', error: error.message });
-            }
+        } catch (error) {
+            console.error('Error in createWinner:', error.message);
+            logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
+            return res.status(500).send({ msg: 'Error occurred', error: error.message });
+        }
     }
 }
 

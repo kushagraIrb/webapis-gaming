@@ -1,6 +1,7 @@
 const coinFlipModel = require('../models/coinFlipModel');
 const userModel = require('../models/userModel');
 const sendMail = require('../helpers/sendMail');
+const { logger } = require('../logger');
 require("dotenv").config();
 
 class CoinFlipService {
@@ -304,6 +305,10 @@ class CoinFlipService {
       return { match, result };
 
     } catch (error) {
+      const message = 'Service: getEligibleMatch - ' + error.message;
+      console.error(message);
+      logger.error(message, { stack: error.stack });
+
       throw new Error('Error in giveWinning: ' + error.message);
     }
   }
@@ -353,7 +358,18 @@ class CoinFlipService {
       await this.createGame();
 
     } catch (error) {
+      const message = 'Service: giveWinnings - ' + error.message;
+      console.error(message);
+      logger.error(message, { stack: error.stack });
+
       throw new Error('Error in giveWinnings: ' + error.message);
+    } finally {
+      // ✅ Will always run, even if there's an error
+      try {
+        await this.createGame();
+      } catch (createGameError) {
+        console.error('Error in createGame (from giveWinnings):', createGameError.message);
+      }
     }
   }
 
@@ -391,7 +407,10 @@ class CoinFlipService {
         await coinFlipModel.createNewGame(newGameData);
       }
     } catch (error) {
-      console.error("Error in createGame:", error.message);
+      const message = 'Service: createGame - ' + error.message;
+      console.error(message);
+      logger.error(message, { stack: error.stack });
+      
       throw error;
     }
   }
