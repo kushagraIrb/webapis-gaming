@@ -327,7 +327,7 @@ class CoinFlipService {
           const winAmount = (win_ratio / 100) * amount;
           const totalUserAmount = amount + winAmount;
 
-          const currentWallet = await this.calculateWalletAmount(userId);
+          const currentWallet = parseFloat(await this.calculateWalletAmount(userId));
           const newWallet = currentWallet + totalUserAmount;
 
           const winnerData = {
