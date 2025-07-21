@@ -51,15 +51,26 @@ class CoinFlipService {
   }
 
   static async userBetHistory(user_id) {
-    try {
+      try {
         const history = await coinFlipModel.fetchUserBetHistory(user_id);
 
-      return history.map(item => ({
-        amount: item.amount,
-        prediction: item.prediction,
-        final_result: item.final_result,
-        result: item.prediction === item.final_result ? 'Win' : 'Loss'
-      }));
+        return history.map(item => {
+          const isPending = !item.final_result || item.final_result.trim() === '';
+
+          const final_result = isPending ? 'Pending' : item.final_result;
+          const result = isPending
+            ? 'Pending'
+            : item.prediction === item.final_result
+                ? 'Win'
+                : 'Loss';
+
+          return {
+            amount: item.amount,
+            prediction: item.prediction,
+            final_result,
+            result
+          };
+        });
     } catch (error) {
       throw new Error('Failed to get bet history.');
     }
