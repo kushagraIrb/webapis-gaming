@@ -221,30 +221,30 @@ class UserController {
         }
     }
 
-    async userDashboard(req, res) {
-        try {
-            const user_id  = req.user_id;
+    // async userDashboard(req, res) {
+    //     try {
+    //         const user_id  = req.user_id;
 
-            const walletAmount = parseFloat(await liveBetService.calculateWalletAmount(user_id));
-            const bonusAmount = parseFloat(await liveBetService.calculateBonus(user_id));
-            const bonusLeagueInfo = await userService.getBonusLeagueInfo(user_id);
-            const totalEarnings = parseFloat(await userService.calculateTotalEarnings(user_id));
+    //         const walletAmount = parseFloat(await liveBetService.calculateWalletAmount(user_id));
+    //         const bonusAmount = parseFloat(await liveBetService.calculateBonus(user_id));
+    //         const bonusLeagueInfo = await userService.getBonusLeagueInfo(user_id);
+    //         const totalEarnings = parseFloat(await userService.calculateTotalEarnings(user_id));
 
-            const referralEarnings = parseFloat(await userService.calculateReferralEarnings(user_id));
+    //         const referralEarnings = parseFloat(await userService.calculateReferralEarnings(user_id));
 
-            return res.status(200).send({
-                walletAmount,
-                bonusAmount,
-                bonusLeagueInfo,
-                totalEarnings,
-                referralEarnings
-            });
-        } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+    //         return res.status(200).send({
+    //             walletAmount,
+    //             bonusAmount,
+    //             bonusLeagueInfo,
+    //             totalEarnings,
+    //             referralEarnings
+    //         });
+    //     } catch (error) {
+    //         logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
             
-            return res.status(500).send({ msg: error.message });
-        }
-    }
+    //         return res.status(500).send({ msg: error.message });
+    //     }
+    // }
 
     async editProfile(req, res) {
         try {

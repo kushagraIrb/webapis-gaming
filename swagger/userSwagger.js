@@ -475,21 +475,21 @@
  *                   example: "An error occurred while changing the password"
  */
 
-/**
- * @swagger
- * /api/users/dashboard:
- *   post:
- *     summary: Get user dashboard data
- *     tags:
- *       - Users
- *     responses:
- *       200:
- *         description: Dashboard data retrieved successfully
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Internal server error
- */
+// /**
+//  * @swagger
+//  * /api/users/dashboard:
+//  *   post:
+//  *     summary: Get user dashboard data
+//  *     tags:
+//  *       - Users
+//  *     responses:
+//  *       200:
+//  *         description: Dashboard data retrieved successfully
+//  *       401:
+//  *         description: Unauthorized
+//  *       500:
+//  *         description: Internal server error
+//  */
 
 /**
  * @swagger

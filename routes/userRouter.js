@@ -26,7 +26,7 @@ router.use(authenticateToken);
 
 router.post('/details', userController.fetchUserDetailsByJwtToken);
 router.post('/change-password', changePwdValidation, userController.changePassword);
-router.post('/dashboard', userController.userDashboard);
+// router.post('/dashboard', userController.userDashboard);
 router.post('/edit-profile', upload.single('profile_image'), editProfileValidation, userController.editProfile);
 router.post('/add-account', addAccountValidation, userController.addAccount);
 router.get('/get-account-details', userController.getAccount);
