@@ -24,7 +24,7 @@ class DashboardController {
                 dashboardService.calculateProfit(user_id),
                 dashboardService.getTotalBetsWin(user_id),
                 dashboardService.getWalletHistory(user_id, 10),
-                dashboardService.getWinLossStats(user_id),
+                dashboardService.getWinLossPercentage(user_id),
             ]);
 
             const {

@@ -117,32 +117,25 @@ class DashboardModel {
         }
     }
 
-    static async fetchWinLossPercentage(userId) {
+    static async fetchWinLossCounts(userId) {
         try {
             const query = `
                 SELECT
-                SUM(CASE WHEN b.team_id = w.team_id THEN 1 ELSE 0 END) AS total_win,
-                SUM(CASE WHEN b.team_id != w.team_id THEN 1 ELSE 0 END) AS total_loss
-            FROM
-                tbl_bet b
-            INNER JOIN
-                tbl_winner w ON b.match_id = w.match_id
-            WHERE
-                b.user_id = ?
-                AND b.status = 1
-                AND DATE(w.win_date) >= CURDATE() - INTERVAL 9 DAY
+                    SUM(CASE WHEN b.team_id = w.team_id THEN 1 ELSE 0 END) AS total_win,
+                    SUM(CASE WHEN b.team_id != w.team_id THEN 1 ELSE 0 END) AS total_loss
+                FROM
+                    tbl_bet b
+                INNER JOIN
+                    tbl_winner w ON b.match_id = w.match_id
+                WHERE
+                    b.user_id = ?
+                    AND b.status = 1
+                    AND DATE(w.win_date) >= CURDATE() - INTERVAL 9 DAY
             `;
             const [rows] = await db.promise().query(query, [userId]);
-
-            const { total_win = 0, total_loss = 0 } = rows[0] || {};
-            const total = total_win + total_loss;
-
-            const winPercentage = total ? ((total_win / total) * 100).toFixed(2) : "0.00";
-            const lossPercentage = total ? ((total_loss / total) * 100).toFixed(2) : "0.00";
-
-            return { winPercentage, lossPercentage };
+            return rows[0] || { total_win: 0, total_loss: 0 };
         } catch (error) {
-            throw new Error("Error calculating win/loss percentage");
+            throw new Error("Error fetching win/loss counts");
         }
     }
 }

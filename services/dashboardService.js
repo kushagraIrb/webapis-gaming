@@ -56,12 +56,24 @@ class DashboardService {
         }
     }
 
-    static async getWinLossStats(userId) {
+    static async getWinLossPercentage(userId) {
         try {
-            return await dashboardModel.fetchWinLossPercentage(userId);
+            const { total_win = 0, total_loss = 0 } = await dashboardModel.fetchWinLossCounts(userId);
+            const total = parseFloat(total_win) + parseFloat(total_loss);
+    
+            let winPercentage = "0.00";
+            let lossPercentage = "0.00";
+    
+            if (total > 0) {
+                winPercentage = ((total_win / total) * 100).toFixed(2);
+                // Ensure total always adds to 100
+                lossPercentage = (100 - parseFloat(winPercentage)).toFixed(2);
+            }
+    
+            return { winPercentage, lossPercentage };
         } catch (error) {
-            logger.error(`Error in getWinLossStats: ${error.message}`, { stack: error.stack, userId });
-            throw new Error("Failed to calculate win/loss stats");
+            logger.error(`Error in getWinLossPercentage: ${error.message}`, { stack: error.stack });
+            throw new Error("Error calculating win/loss percentage");
         }
     }
 }
