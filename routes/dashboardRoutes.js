@@ -7,6 +7,6 @@ const authenticateToken = require('../helpers/authToken');
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
-router.post('/', dashboardController.userDashboard);
+router.get('/', dashboardController.userDashboard);
 
 module.exports = router;

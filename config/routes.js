@@ -21,6 +21,7 @@ const routes = [
     { path: '/api/coin-flip', router: require('../routes/coinFlipRouter') },
     { path: '/api/limbo', router: require('../routes/limboRouter') },
     { path: '/api/home-slider', router: require('../routes/homeSliderRouter') },
+    { path: '/api/user-dashboard', router: require('../routes/dashboardRoutes') },
 ];
 
 module.exports = (app) => {
