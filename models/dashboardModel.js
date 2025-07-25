@@ -13,7 +13,7 @@ class DashboardModel {
 
     static async fetchTotalDeposit(userId) {
         try {
-            const query = `SELECT SUM(debit_amount) AS total_deposits FROM tbl_transaction_history WHERE user_id = ? AND t_status IN ('Deposit', 'Deposit by Admin')`;
+            const query = `SELECT SUM(credit_amount) AS total_deposits FROM tbl_transaction_history WHERE user_id = ? AND t_status IN ('Deposit', 'Deposit by Admin')`;
             const [result] = await db.promise().query(query, [userId]);
             return result[0]?.total_deposits || 0; // Default to 0 if no earnings found
         } catch (error) {

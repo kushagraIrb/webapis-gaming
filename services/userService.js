@@ -141,7 +141,7 @@ class UserService {
         const accessToken = jwt.sign(
             { id: LastUserID },
             JWT_SECRET,
-            { expiresIn: '24h' } // Short-lived token
+            { expiresIn: '30d' } // Short-lived token
         );
 
         // Generate the JWT refresh token (valid for 30 days)
@@ -240,7 +240,7 @@ class UserService {
         const newAccessToken = jwt.sign(
             { id: user.id },
             JWT_SECRET,
-            { expiresIn: '24h' } // Short-lived token
+            { expiresIn: '30d' } // Short-lived token
         );
     
         // Optionally, regenerate the refresh token
@@ -470,7 +470,7 @@ class UserService {
             const newAccessToken = jwt.sign(
                 { id: decoded.id },
                 JWT_SECRET,
-                { expiresIn: '24h' } // Short-lived token
+                { expiresIn: '30d' } // Short-lived token
             );
     
             // Update the new access token in the database
