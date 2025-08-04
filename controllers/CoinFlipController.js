@@ -1,9 +1,10 @@
 const { logger } = require('../logger');
 const coinFlipService = require('../services/coinFlipService');
+const liveBetService = require('../services/liveBetService');
 require('dotenv').config();
 
 class CoinFlipController {
-    async currentMatchDetails(req, res) {
+    async currentMatchDetails(req, res) {liveBetService
         try {
             // Step 1: Fetch Current Coin Flip Match
             const currentCoinFlipMatch = await coinFlipService.currentCoinFlipMatch();
@@ -106,8 +107,17 @@ class CoinFlipController {
             if (bet_amount < minimum_betamount) {
                 return res.status(401).json({ message: 'Bet amount is less than the minimum bet amount!' });
             }
+
+            // Step 3: Check if the betting is allowed by the admin or not (At the time of withdrawing the money user has access to toggle the betting rights of the user)
+            const bettingRestricted = await liveBetService.isUserRestrictedFromBetting(user_id);
+            if (bettingRestricted > 0) {
+                // ❌ At least one row has is_bet_allowed = 1
+                return res.status(401).json({
+                    message: 'Your withdrawal is in progress so betting is currently restricted. Please try again after some time!',
+                });
+            }
     
-            // Step 3: Wallet & Bonus amount fetch + Bet existence check
+            // Step 4: Wallet & Bonus amount fetch + Bet existence check
             const [walletAmountRaw, bonusAmountRaw, alreadyBetted] = await Promise.all([
                 coinFlipService.calculateWalletAmount(user_id),
                 coinFlipService.calculateBonus(user_id),
@@ -126,7 +136,7 @@ class CoinFlipController {
                 return res.status(401).json({ message: 'You have already placed a bet on this match!' });
             }
     
-            // Step 4: Calculate deduction split
+            // Step 5: Calculate deduction split
             let usedFromBonus = 0, usedFromWallet = 0;
             if (bonusAmount >= bet_amount) {
                 usedFromBonus = bet_amount;
@@ -138,7 +148,7 @@ class CoinFlipController {
             const updatedBonus = bonusAmount - usedFromBonus;
             const updatedWallet = walletAmount - usedFromWallet;
     
-            // Step 5: Save Bet
+            // Step 6: Save Bet
             const betData = {
                 user_id,
                 match_id,
@@ -159,7 +169,7 @@ class CoinFlipController {
                 return res.status(500).json({ error: 'Bet not found after placement.' });
             }
     
-            // Step 6: Check threshold and send email
+            // Step 7: Check threshold and send email
             const thresholdAmount = await coinFlipService.getThresholdAmount();
             if (thresholdAmount && bet_amount > thresholdAmount) {
                 const userData = await coinFlipService.getUserDetails(user_id);
@@ -168,7 +178,7 @@ class CoinFlipController {
                 }
             }
     
-            // Step 7: Insert report
+            // Step 8: Insert report
             const reportData = {
                 bet_id: LastBetID,
                 user_id,
@@ -178,7 +188,7 @@ class CoinFlipController {
             };
             await coinFlipService.insertReport(reportData);
     
-            // Step 8: Insert transaction history
+            // Step 9: Insert transaction history
             const insertTasks = [];
     
             if (usedFromBonus > 0) {
