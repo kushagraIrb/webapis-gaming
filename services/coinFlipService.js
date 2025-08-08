@@ -421,6 +421,19 @@ class CoinFlipService {
       throw error;
     }
   }
+
+  static async coinFlipList(page, perPage, user_id) {
+    try {
+      const start = (page - 1) * perPage;
+      const coinFlipHistory = await coinFlipModel.getCoinFlipHistory(start, perPage, user_id);
+      const totalCount = await coinFlipModel.getCoinFlipHistoryCount(user_id); // Fetch count
+
+      return { coinFlipHistory, totalCount };
+    } catch (error) {
+      console.error('Error in fetching coin flip history service:', error.message);
+      throw new Error('Failed to fetch coin flip history');
+    }
+  }
 }
 
 module.exports = CoinFlipService;

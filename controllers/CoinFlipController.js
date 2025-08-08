@@ -258,6 +258,39 @@ class CoinFlipController {
             return res.status(500).send({ msg: 'Error occurred', error: error.message });
         }
     }
+
+    async coinFlipHistory(req, res) {
+        try {
+            const user_id = req.user_id;
+
+            if (!user_id) {
+                return res.status(401).json({ msg: 'Invalid user.' });
+            }
+
+            // Get pagination parameters from the query (if available)
+            const { page = 1, perPage = 10 } = req.query; // Default: page 1, 10 items per page
+    
+            // Fetch blogs using the service
+            const { coinFlipHistory, totalCount } = await coinFlipService.coinFlipList(Number(page), Number(perPage), user_id);
+    
+            return res.status(200).send({
+                status: true,
+                data: coinFlipHistory,
+                count: totalCount,
+                currentPage: Number(page),
+                perPage: Number(perPage),
+                totalPages: Math.ceil(totalCount / perPage),
+            });
+        } catch (error) {
+            console.error('Error fetching coin flip history:', error.message);
+            logger.error(`Error fetching coin flip history: ${error.message}`, { stack: error.stack });
+            
+            return res.status(500).send({
+                msg: 'An error occurred',
+                error: error.message,
+            });
+        }
+    }
 }
 
 module.exports = new CoinFlipController();

@@ -556,6 +556,53 @@ class CoinFlipModel {
             throw error;
         }
     }
+
+    static async getCoinFlipHistory(start = 0, perPage = 5, user_id) {
+        try {
+            const query = `
+                SELECT 
+                    m.match_title,
+                    CASE 
+                        WHEN m.final_result = b.prediction THEN 'Win'
+                        ELSE 'Loss'
+                    END AS bet_status,
+                    m.final_result,
+                    b.amount,
+                    b.prediction,
+                    b.bet_date
+                FROM tbl_coin_bet b
+                JOIN tbl_upcoming_match_coinflip m ON b.match_id = m.id
+                WHERE b.user_id = ?
+                AND b.bet_date >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+                ORDER BY m.id DESC
+                LIMIT ?, ?
+            `;
+
+            const [results] = await db.promise().query(query, [user_id, start, perPage]);
+            return results;
+        } catch (error) {
+            console.error('Error fetching coin flip history from database:', error.message);
+            throw new Error('Database query failed');
+        }
+    }
+
+    static async getCoinFlipHistoryCount(user_id) {
+        try {
+            const query = `
+                SELECT COUNT(*) as total
+                FROM tbl_coin_bet b
+                JOIN tbl_upcoming_match_coinflip m ON b.match_id = m.id
+                LEFT JOIN tbl_transaction_history tr ON tr.bet_id = b.bet_id
+                WHERE b.user_id = ?
+                AND b.bet_date >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+            `;
+            const [[result]] = await db.promise().query(query, [user_id]);
+            return result.total;
+        } catch (error) {
+            console.error('Error fetching coin flip history count:', error.message);
+            throw new Error('Database query failed');
+        }
+    }
 }
 
 module.exports = CoinFlipModel;
