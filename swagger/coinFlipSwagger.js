@@ -209,3 +209,96 @@
  *                   type: string
  *                   example: "Error occurred while processing the match result."
  */
+
+/**
+ * @swagger
+ * /api/coin-flip/history:
+ *   get:
+ *     summary: "Get paginated coin flip history for the logged-in user"
+ *     description: "Returns the user's coin flip betting history within the last 3 days, including bet status, amount, prediction, and match results."
+ *     tags:
+ *       - Coin Flip
+ *     security:
+ *       - bearerAuth: []  # Assumes bearer token authentication
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: "Page number for pagination"
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *         description: "Number of records to return per page"
+ *     responses:
+ *       200:
+ *         description: "Coin flip history retrieved successfully"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 count:
+ *                   type: integer
+ *                   example: 12
+ *                 currentPage:
+ *                   type: integer
+ *                   example: 1
+ *                 perPage:
+ *                   type: integer
+ *                   example: 5
+ *                 totalPages:
+ *                   type: integer
+ *                   example: 3
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       match_title:
+ *                         type: string
+ *                         example: "Team A vs Team B"
+ *                       bet_status:
+ *                         type: string
+ *                         enum: [Win, Loss]
+ *                         example: "Win"
+ *                       amount:
+ *                         type: number
+ *                         example: 50
+ *                       prediction:
+ *                         type: string
+ *                         example: "Team A"
+ *                       final_result:
+ *                         type: string
+ *                         example: "Team A"
+ *                       bet_date:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2025-08-05T14:30:00Z"
+ *       401:
+ *         description: "Unauthorized"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid user."
+ *       500:
+ *         description: "Internal server error"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Error occurred while fetching coin flip history."
+ */
