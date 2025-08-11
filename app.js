@@ -12,6 +12,8 @@ const db = require('./config/database.js');
 const setupRoutes = require('./config/routes.js');
 const { checkIPAccess, checkIPAccessStatus } = require('./helpers/checkIpAccess.js');
 
+const whitelist = ['/api/contact-us', '/api/home-slider'];
+
 const numCPUs = os.cpus().length;
 const port = process.env.SERVER_PORT || 3000;
 const host = process.env.SERVER_HOST || 'localhost';
@@ -59,7 +61,14 @@ if (cluster.isMaster) {
     });
 
     // IP access middleware and routes
-    app.use(checkIPAccess);
+    app.use((req, res, next) => {
+        // Skip IP check for whitelisted routes
+        if (whitelist.some(path => req.path.startsWith(path))) {
+            return next();
+        }
+        return checkIPAccess(req, res, next);
+    });
+
     setupRoutes(app);
 
     // IP access check endpoint
