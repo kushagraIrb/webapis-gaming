@@ -12,7 +12,7 @@ const db = require('./config/database.js');
 const setupRoutes = require('./config/routes.js');
 const { checkIPAccess, checkIPAccessStatus } = require('./helpers/checkIpAccess.js');
 
-const whitelist = ['/api/contact-us', '/api/home-slider'];
+const whitelist = ['/api/contact-us', '/api/home-slider', '/api/about-us', '/api/rules', '/api/blogs', '/api/events'];
 
 const numCPUs = os.cpus().length;
 const port = process.env.SERVER_PORT || 3000;
