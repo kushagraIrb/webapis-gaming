@@ -102,13 +102,30 @@
  *   post:
  *     summary: "Place a Limbo bet"
  *     description: |
- *       Allows the logged-in user to place a Limbo bet.
+ *       Allows the logged-in user (identified via session token or authenticated ID) to place a Limbo bet.  
+ *       Includes wallet balance validation, controlled outcome tracking, and win range tracking.
  *       
- *       - **bet_type = 1 (Manual Bet)**:  
- *         Fields to be given: `bet_type`, `target_multiplier`, `win_chance`, `bet_amount`, `profit_on_win`
+ *       **Session Handling**:
+ *       - Requires a valid `session_token` cookie or authenticated `user_id`.
+ *       - If `session_token` is missing or invalid, the request will be rejected.
  *       
- *       - **bet_type = 2 (Auto Bet)**:  
- *         Fields to be given: `bet_type`, `target_multiplier`, `win_chance`, `bet_amount`, `number_of_bets`, `on_wins`, `on_loss`, `stop_on_profit`, `stop_on_loss`
+ *       **Bet Types**:
+ *       - **bet_type = 1 (Manual Bet)**  
+ *         Required fields:  
+ *         `bet_type`, `target_multiplier`, `win_chance`, `bet_amount`, `profit_on_win`
+ *       
+ *       - **bet_type = 2 (Auto Bet)**  
+ *         Required fields:  
+ *         `bet_type`, `target_multiplier`, `win_chance`, `bet_amount`, `number_of_bets`, `on_wins`, `on_loss`, `stop_on_profit`, `stop_on_loss`
+ *       
+ *       **Controlled Outcome Logic**:
+ *       - If the user is under control (`is_under_control = 1` in `tbl_limbo_control_tracker`), 
+ *         some matches will use a fixed multiplier from `[1.00, 1.01, 1.02]` instead of a random set.
+ *       - Matches are tracked in cycles of 7; after each cycle, control settings reset.
+ *       
+ *       **Win Tracking**:
+ *       - Wins with `target_multiplier` between `1.01` and `1.99` are accumulated in `total_wins_in_range`.
+ *       - If `total_wins_in_range` exceeds 50,000, the user enters controlled mode.
  *     tags:
  *       - Limbo
  *     requestBody:
@@ -205,15 +222,18 @@
  *                     type: string
  *                   example: ["Target Multiplier", "Bet Amount"]
  *       401:
- *         description: "Unauthorized - user ID not found"
+ *         description: "Unauthorized - Invalid session token or user ID"
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 msg:
+ *                 status:
  *                   type: string
- *                   example: "Invalid user."
+ *                   example: "Error"
+ *                 message:
+ *                   type: string
+ *                   example: "No User ID found for the given session_token"
  *       500:
  *         description: "Internal server error"
  *         content:
