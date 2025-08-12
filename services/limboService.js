@@ -74,9 +74,38 @@ class LimboService {
             t_status: 'Bet'
         });
 
-        const betMultiplier = await this.betMultiplier(userId);
+        // const betMultiplier = await this.betMultiplier(userId);
 
-        if (betMultiplier > target_multiplier) {
+        let betMultiplier;
+        const controlData = await limboModel.getControlTracker(userId);
+
+        if (controlData && controlData.is_under_control) {
+            let controlledMatches = JSON.parse(controlData.controlled_matches || '[]');
+
+            if (!controlledMatches.length) {
+                const randomIndexes = [...Array(7).keys()].map(i => i + 1);
+                controlledMatches = randomIndexes.sort(() => 0.5 - Math.random()).slice(0, 2);
+                await limboModel.updateControlTracker(userId, { controlled_matches: JSON.stringify(controlledMatches) });
+            }
+
+            const matchCounter = controlData.match_counter + 1;
+            await limboModel.updateControlTracker(userId, { match_counter: matchCounter });
+
+            if (controlledMatches.includes(matchCounter)) {
+                const staticSet = [1.00, 1.01, 1.02];
+                betMultiplier = staticSet[Math.floor(Math.random() * staticSet.length)];
+            } else {
+                betMultiplier = await this.betMultiplier(userId);
+            }
+
+            if (matchCounter >= 7) {
+                await limboModel.resetControlTracker(userId);
+            }
+        } else {
+            betMultiplier = await this.betMultiplier(userId);
+        }
+
+        if (betMultiplier >= target_multiplier) {
             const payout = bet_amount * target_multiplier;
             await limboModel.updateLimbo({
                 id: limboId,
@@ -100,6 +129,10 @@ class LimboService {
                 type: 'Credit',
                 t_status: 'Deposit',
             });
+
+            if (target_multiplier >= 1.01 && target_multiplier <= 1.99) {
+                await limboModel.trackWinInRange(userId, profitOnly, createdAt);
+            }
 
             return {
                 status: 'Win',

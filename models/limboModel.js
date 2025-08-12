@@ -238,6 +238,95 @@ class LimboModel {
             throw new Error('Database query failed in saving auto bet query');
         }
     }
+
+    // 1️⃣ Get control tracker for a user
+    static async getControlTracker(userId) {
+        try {
+            const query = `SELECT * FROM tbl_limbo_control_tracker WHERE user_id = ?`;
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0 ? rows[0] : null;
+        } catch (error) {
+            console.error('Error in getControlTracker:', error);
+            return null;
+        }
+    }
+
+    // 2️⃣ Update control tracker fields
+    static async updateControlTracker(userId, data) {
+        try {
+            const setClauses = [];
+            const values = [];
+
+            for (const key in data) {
+                setClauses.push(`${key} = ?`);
+                values.push(data[key]);
+            }
+            values.push(userId);
+
+            const query = `UPDATE tbl_limbo_control_tracker SET ${setClauses.join(', ')} WHERE user_id = ?`;
+            const [result] = await db.promise().query(query, values);
+            return result.affectedRows > 0;
+        } catch (error) {
+            console.error('Error in updateControlTracker:', error);
+            return false;
+        }
+    }
+
+    // 3️⃣ Reset control tracker (like CI3 reset after 7 matches)
+    static async resetControlTracker(userId) {
+        try {
+            const query = `
+                UPDATE tbl_limbo_control_tracker 
+                SET match_counter = 0,
+                    total_wins_in_range = 0,
+                    is_under_control = 0,
+                    controlled_matches = NULL,
+                    threshold_reached_at = NULL
+                WHERE user_id = ?
+            `;
+            const [result] = await db.promise().query(query, [userId]);
+            return result.affectedRows > 0;
+        } catch (error) {
+            console.error('Error in resetControlTracker:', error);
+            return false;
+        }
+    }
+
+    // 4️⃣ Track win in range (1.01 ≤ target_multiplier ≤ 1.99)
+    static async trackWinInRange(userId, profitOnly, createdAt) {
+        try {
+            const query = `
+                INSERT INTO tbl_limbo_control_tracker (
+                    user_id, total_wins_in_range, threshold_reached_at,
+                    is_under_control, match_counter, updated_at
+                )
+                VALUES (?, ?, ?, 0, 0, ?)
+                ON DUPLICATE KEY UPDATE 
+                    total_wins_in_range = total_wins_in_range + VALUES(total_wins_in_range),
+                    updated_at = VALUES(updated_at),
+                    is_under_control = CASE 
+                        WHEN total_wins_in_range + VALUES(total_wins_in_range) >= 50000 THEN 1 
+                        ELSE is_under_control 
+                    END,
+                    threshold_reached_at = CASE 
+                        WHEN total_wins_in_range + VALUES(total_wins_in_range) >= 50000 
+                            AND threshold_reached_at IS NULL 
+                        THEN VALUES(threshold_reached_at) 
+                        ELSE threshold_reached_at 
+                    END
+            `;
+            const [result] = await db.promise().query(query, [
+                userId, 
+                profitOnly, 
+                createdAt, 
+                createdAt
+            ]);
+            return result.affectedRows > 0;
+        } catch (error) {
+            console.error('Error in trackWinInRange:', error);
+            return false;
+        }
+    }
 }
 
 module.exports = LimboModel;
