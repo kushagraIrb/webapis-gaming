@@ -89,7 +89,7 @@ class DashboardModel {
         }
     }
 
-    static async getWalletHistoryForLastNDays(userId, limit = 10) {
+    static async getWalletHistoryForLastNDays(userId) {
         try {
             const query = `
                 SELECT DATE(transaction_date) AS date, t.total_amount FROM tbl_transaction_history t
@@ -99,17 +99,15 @@ class DashboardModel {
                     WHERE user_id = ?
                     GROUP BY DATE(transaction_date)
                     ORDER BY max_date DESC
-                    LIMIT ?
+                    LIMIT 10
                 ) AS latest_per_day
                 ON t.transaction_date = latest_per_day.max_date
                 WHERE t.user_id = ? ORDER BY t.transaction_date ASC
             `;
-            // return db.format(query, [userId, limit, userId]);
 
-            const [rows] = await db.promise().query(query, [userId, limit, userId]);
+            const [rows] = await db.promise().query(query, [userId, userId]);
 
             return rows.map(row => ({
-                // date: row.date.toISOString().split('T')[0],  // format YYYY-MM-DD
                 balance: parseFloat(row.total_amount)
             }));
         } catch (error) {

@@ -47,9 +47,9 @@ class DashboardService {
         }
     }
 
-    static async getWalletHistory(userId, days = 10) {
+    static async getWalletHistory(userId) {
         try {
-            return await dashboardModel.getWalletHistoryForLastNDays(userId, days);
+            return await dashboardModel.getWalletHistoryForLastNDays(userId);
         } catch (error) {
             logger.error(`Error in getWalletHistory: ${error.message}`, { stack: error.stack, userId });
             throw new Error('Error fetching wallet history');
