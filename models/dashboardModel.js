@@ -92,17 +92,25 @@ class DashboardModel {
     static async getWalletHistoryForLastNDays(userId) {
         try {
             const query = `
-                SELECT DATE(transaction_date) AS date, t.total_amount FROM tbl_transaction_history t
+                SELECT DATE(t.transaction_date) AS date, 
+                        t.transaction_date, 
+                        t.total_amount
+                FROM tbl_transaction_history t
                 JOIN (
-                    SELECT MAX(transaction_date) AS max_date
+                    SELECT DATE(transaction_date) AS txn_date,
+                            MAX(transaction_date) AS max_date,
+                            MAX(trans_id) AS max_trans_id
                     FROM tbl_transaction_history
                     WHERE user_id = ?
                     GROUP BY DATE(transaction_date)
-                    ORDER BY max_date DESC
+                    ORDER BY txn_date DESC
                     LIMIT 10
-                ) AS latest_per_day
-                ON t.transaction_date = latest_per_day.max_date
-                WHERE t.user_id = ? ORDER BY t.transaction_date ASC
+                ) latest_per_day
+                    ON DATE(t.transaction_date) = latest_per_day.txn_date
+                    AND t.transaction_date = latest_per_day.max_date
+                    AND t.trans_id = latest_per_day.max_trans_id
+                WHERE t.user_id = ?
+                ORDER BY t.transaction_date ASC;
             `;
 
             const [rows] = await db.promise().query(query, [userId, userId]);
