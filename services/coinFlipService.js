@@ -3,6 +3,7 @@ const userModel = require('../models/userModel');
 const sendMail = require('../helpers/sendMail');
 const { logger } = require('../logger');
 require("dotenv").config();
+const { RECEIVER_EMAIL } = process.env;
 
 class CoinFlipService {
   static async currentCoinFlipMatch() {
@@ -240,17 +241,9 @@ class CoinFlipService {
       const subject = 'New Bet Information';
       const message = `<strong>${userData.first_name} ${userData.last_name}</strong> has placed a bet of Rs.<strong>${bet_amount}</strong> on <strong>Coin Flip Match</strong>. Phone: <strong>${userData.phone}</strong>`;
       
-      const recipientEmails = [
-        'bhushankatkar111@gmail.com',
-        'Ankitgoyal4691@gmail.com',
-        'Joker88563@gmail.com'
-      ];
+      await sendMail(RECEIVER_EMAIL, subject, message);
 
-      for (const email of recipientEmails) {
-        await sendMail(email, subject, message);
-      }
-
-      console.log('Email sent successfully.');
+      console.log(`Email sent successfully to ${RECEIVER_EMAIL}`);
       return true;
     } catch (error) {
       console.error('Error sending email:', error.message);
