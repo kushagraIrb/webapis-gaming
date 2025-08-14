@@ -1,5 +1,6 @@
 const contactUsModel = require('../models/contactUsModel');
 const sendMail = require('../helpers/sendMail');
+const { RECEIVER_EMAIL } = process.env;
 
 class ContactUsService {
   // Get contact details from the database
@@ -34,7 +35,7 @@ class ContactUsService {
                 <p><strong>Email ID:</strong> ${contact_email}</p>
             `;
 
-            await sendMail(contact_email, mailSubject, content);
+            await sendMail(RECEIVER_EMAIL, mailSubject, content);
 
             console.log('Email sent successfully.');
             return true;
