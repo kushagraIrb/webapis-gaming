@@ -3,14 +3,14 @@
  * /api/limbo/bet-details:
  *   get:
  *     summary: "Fetch user's Limbo bet history"
- *     description: "Retrieve the latest 10 Limbo bets for the logged-in user based on session token"
+ *     description: "Retrieve the latest 10 Limbo bets for the logged-in user based on access token"
  *     tags:
  *       - Limbo
  *     parameters:
  *       - in: cookie
- *         name: session_token
+ *         name: access_token
  *         required: true
- *         description: Base64 encoded session token to identify the user
+ *         description: Base64 encoded access token to identify the user
  *         schema:
  *           type: string
  *     responses:
@@ -53,7 +53,7 @@
  *                   type: string
  *                   example: "Bets fetched successfully"
  *       401:
- *         description: "Session token missing or invalid"
+ *         description: "access token missing or invalid"
  *         content:
  *           application/json:
  *             schema:
@@ -64,7 +64,7 @@
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "Session token missing"
+ *                   example: "access token missing"
  *       404:
  *         description: "No user found or no bets found"
  *         content:
@@ -77,7 +77,7 @@
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "No user found for session token"
+ *                   example: "No user found for access token"
  *       500:
  *         description: "Internal server error"
  *         content:
@@ -102,12 +102,12 @@
  *   post:
  *     summary: "Place a Limbo bet"
  *     description: |
- *       Allows the logged-in user (identified via session token or authenticated ID) to place a Limbo bet.  
+ *       Allows the logged-in user (identified via access token or authenticated ID) to place a Limbo bet.  
  *       Includes wallet balance validation, controlled outcome tracking, and win range tracking.
  *       
- *       **Session Handling**:
- *       - Requires a valid `session_token` cookie or authenticated `user_id`.
- *       - If `session_token` is missing or invalid, the request will be rejected.
+ *       **access Handling**:
+ *       - Requires a valid `access_token` cookie or authenticated `user_id`.
+ *       - If `access_token` is missing or invalid, the request will be rejected.
  *       
  *       **Bet Types**:
  *       - **bet_type = 1 (Manual Bet)**  
@@ -222,7 +222,7 @@
  *                     type: string
  *                   example: ["Target Multiplier", "Bet Amount"]
  *       401:
- *         description: "Unauthorized - Invalid session token or user ID"
+ *         description: "Unauthorized - Invalid access token or user ID"
  *         content:
  *           application/json:
  *             schema:
@@ -233,7 +233,7 @@
  *                   example: "Error"
  *                 message:
  *                   type: string
- *                   example: "No User ID found for the given session_token"
+ *                   example: "No User ID found for the given access_token"
  *       500:
  *         description: "Internal server error"
  *         content:
