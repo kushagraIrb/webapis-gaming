@@ -294,8 +294,10 @@ class LimboModel {
     }
 
     // 4️⃣ Track win in range (1.01 ≤ target_multiplier ≤ 1.99)
-    static async trackWinInRange(userId, profitOnly, createdAt) {
+    static async trackWinInRange(userId, profitOnly) {
         try {
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
             const query = `
                 INSERT INTO tbl_limbo_control_tracker (
                     user_id, total_wins_in_range, threshold_reached_at,
@@ -319,8 +321,8 @@ class LimboModel {
             const [result] = await db.promise().query(query, [
                 userId, 
                 profitOnly, 
-                createdAt, 
-                createdAt
+                istTime, 
+                istTime
             ]);
             return result.affectedRows > 0;
         } catch (error) {

@@ -80,11 +80,13 @@ class LimboService {
         const controlData = await limboModel.getControlTracker(userId);
 
         if (controlData && controlData.is_under_control) {
-            let controlledMatches = JSON.parse(controlData.controlled_matches || '[]');
+            let controlledMatches = controlData.controlled_matches || [];
 
             if (!controlledMatches.length) {
                 const randomIndexes = [...Array(7).keys()].map(i => i + 1);
+
                 controlledMatches = randomIndexes.sort(() => 0.5 - Math.random()).slice(0, 2);
+                
                 await limboModel.updateControlTracker(userId, { controlled_matches: JSON.stringify(controlledMatches) });
             }
 
@@ -107,6 +109,7 @@ class LimboService {
 
         if (betMultiplier >= target_multiplier) {
             const payout = bet_amount * target_multiplier;
+            const profitOnly = payout - bet_amount;
             await limboModel.updateLimbo({
                 id: limboId,
                 payout,
@@ -131,7 +134,7 @@ class LimboService {
             });
 
             if (target_multiplier >= 1.01 && target_multiplier <= 1.99) {
-                await limboModel.trackWinInRange(userId, profitOnly, createdAt);
+                await limboModel.trackWinInRange(userId, profitOnly);
             }
 
             return {

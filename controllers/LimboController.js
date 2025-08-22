@@ -17,7 +17,9 @@ class LimboController {
                 message: 'Bets fetched successfully',
             });
         } catch (error) {
-            console.error('Error fetching bet details:', error.message);
+            console.error('Error fetching limbo bet details:', error.message);
+            logger.error(`Error fetching limbo bet details data: ${error.message}`, { stack: error.stack });
+            
             return res.status(500).json({
                 status: false,
                 message: 'An error occurred while fetching bet details',
@@ -48,7 +50,9 @@ class LimboController {
     
             return res.status(200).json(result);
         } catch (error) {
-            console.error('Error in manualBet:', error.message);
+            console.error('Error in limbo placeBet Controller:', error.message);
+            logger.error(`Error fetching limbo placeBet Controller: ${error.message}`, { stack: error.stack });
+
             return res.status(500).json({ status: 'Error', message: 'Internal server error' });
         }
     }
