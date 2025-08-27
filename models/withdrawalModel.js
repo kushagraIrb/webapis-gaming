@@ -80,6 +80,18 @@ class WithdrawalModel {
         }
     }
 
+    static async findPrimaryAccount(userId) {
+        const query = `SELECT * FROM tbl_user_account WHERE user_id = ? AND primary_account = 1 LIMIT 1`;
+
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows[0] || null; // return the primary account if exists
+        } catch (error) {
+            console.error("Error finding primary account:", error.message);
+            throw new Error("Failed to fetch primary account");
+        }
+    }
+
     // Fetch withdrawal button status
     static async withdrawalButtonStatus() {
         const query = `SELECT * FROM tbl_with_button`;

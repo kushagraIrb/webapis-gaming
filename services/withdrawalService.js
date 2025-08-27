@@ -64,6 +64,16 @@ class WithdrawalService {
                 };
             }
 
+            // Check if user has a primary account
+            const primaryAccount = await withdrawalModel.findPrimaryAccount(userId);
+
+            if (!primaryAccount) {
+                return {
+                    status: false,
+                    message: "Please set a primary account before making a withdrawal request.",
+                };
+            }
+
             // Prepare withdrawal data for saving
             const withdrawalData = { userId, withdrawalAmount, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm };
 
