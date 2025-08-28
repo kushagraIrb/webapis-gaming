@@ -330,6 +330,46 @@ class LimboModel {
             return false;
         }
     }
+
+    static async limboBetHistory(start = 0, perPage = 5, user_id) {
+        try {
+            const query = `
+                SELECT l.id AS limbo_id, l.bet_amount, l.target_multiplier, l.bet_multiplier, l.created_at,
+                    CASE 
+                        WHEN l.target_multiplier >= l.bet_multiplier THEN 'Win'
+                        ELSE 'Loss'
+                    END AS status,
+                    CASE 
+                        WHEN (l.payout - l.bet_amount) >= 0 THEN (l.payout - l.bet_amount)
+                        ELSE 0
+                    END AS win_amount,
+                    COALESCE(t.total_amount, 0) AS wallet_amount
+                FROM tbl_limbo l
+                LEFT JOIN tbl_transaction_history t 
+                    ON t.limbo_id = l.id AND t.user_id = l.user_id
+                WHERE l.user_id = ?
+                ORDER BY l.created_at DESC
+                LIMIT ?, ?;
+            `;
+
+            const [results] = await db.promise().query(query, [user_id, start, perPage]);
+            return results;
+        } catch (error) {
+            console.error('Error fetching limbo bet history from database:', error.message);
+            throw new Error('Database query failed');
+        }
+    }
+
+    static async limboBetHistoryCount(user_id) {
+        try {
+            const query = `SELECT COUNT(*) AS total FROM tbl_limbo WHERE user_id = ?;`;
+            const [[result]] = await db.promise().query(query, [user_id]);
+            return result.total;
+        } catch (error) {
+            console.error('Error fetching limbo bet history count:', error.message);
+            throw new Error('Database query failed');
+        }
+    }
 }
 
 module.exports = LimboModel;

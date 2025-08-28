@@ -10,4 +10,6 @@ router.use(authenticateToken);
 router.get('/bet-details', limboController.betDetails);
 router.post('/place-bet', limboController.placeBet);
 
+router.get('/history', limboController.limboBetHistory);
+
 module.exports = router;

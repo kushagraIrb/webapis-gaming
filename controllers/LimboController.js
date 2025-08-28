@@ -56,6 +56,39 @@ class LimboController {
             return res.status(500).json({ status: 'Error', message: 'Internal server error' });
         }
     }
+
+    async limboBetHistory(req, res) {
+        try {
+            const user_id = req.user_id;
+
+            if (!user_id) {
+                return res.status(401).json({ msg: 'Invalid user.' });
+            }
+
+            // Get pagination parameters from the query (if available)
+            const { page = 1, perPage = 10 } = req.query; // Default: page 1, 10 items per page
+    
+            // Fetch blogs using the service
+            const { limboBetHistory, totalCount } = await limboService.limboUserList(Number(page), Number(perPage), user_id);
+    
+            return res.status(200).send({
+                status: true,
+                data: limboBetHistory,
+                count: totalCount,
+                currentPage: Number(page),
+                perPage: Number(perPage),
+                totalPages: Math.ceil(totalCount / perPage),
+            });
+        } catch (error) {
+            console.error('Error fetching limbo bet history:', error.message);
+            logger.error(`Error fetching limbo bet history: ${error.message}`, { stack: error.stack });
+            
+            return res.status(500).send({
+                msg: 'An error occurred',
+                error: error.message,
+            });
+        }
+    }
 }
 
 module.exports = new LimboController();

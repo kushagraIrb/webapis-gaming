@@ -207,6 +207,19 @@ class LimboService {
         const random = Math.floor(Math.random() * ((max * 100) - (min * 100) + 1) + (min * 100)) / 100;
         return random;
     }
+
+    static async limboUserList(page, perPage, user_id) {
+        try {
+        const start = (page - 1) * perPage;
+        const limboBetHistory = await limboModel.limboBetHistory(start, perPage, user_id);
+        const totalCount = await limboModel.limboBetHistoryCount(user_id);
+
+        return { limboBetHistory, totalCount };
+        } catch (error) {
+        console.error('Error in fetching limbo bet history service:', error.message);
+        throw new Error('Failed to fetch limbo bet history');
+        }
+    }
 }
 
 module.exports = LimboService;
