@@ -248,3 +248,135 @@
  *                   type: string
  *                   example: "Internal server error"
  */
+
+/**
+ * @swagger
+ * /api/limbo/history:
+ *   get:
+ *     summary: "Fetch user's Limbo bet history (paginated)"
+ *     description: "Retrieve paginated Limbo bet history for the logged-in user based on access token"
+ *     tags:
+ *       - Limbo
+ *     parameters:
+ *       - in: cookie
+ *         name: access_token
+ *         required: true
+ *         description: Base64 encoded access token to identify the user
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         description: Page number (default = 1)
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *       - in: query
+ *         name: perPage
+ *         required: false
+ *         description: Number of records per page (default = 10)
+ *         schema:
+ *           type: integer
+ *           example: 10
+ *     responses:
+ *       200:
+ *         description: "Bets successfully retrieved"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       limbo_id:
+ *                         type: integer
+ *                         example: 123
+ *                       created_at:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2025-08-28T10:00:00Z"
+ *                       bet_amount:
+ *                         type: number
+ *                         format: float
+ *                         example: 50
+ *                       target_multiplier:
+ *                         type: number
+ *                         format: float
+ *                         example: 2.0
+ *                       bet_multiplier:
+ *                         type: number
+ *                         format: float
+ *                         example: 1.8
+ *                       status:
+ *                         type: string
+ *                         enum: [Win, Loss]
+ *                         example: "Win"
+ *                       win_amount:
+ *                         type: number
+ *                         format: float
+ *                         example: 75
+ *                       wallet_amount:
+ *                         type: number
+ *                         format: float
+ *                         example: 1200
+ *                 count:
+ *                   type: integer
+ *                   example: 25
+ *                 currentPage:
+ *                   type: integer
+ *                   example: 1
+ *                 perPage:
+ *                   type: integer
+ *                   example: 10
+ *                 totalPages:
+ *                   type: integer
+ *                   example: 3
+ *       401:
+ *         description: "access token missing or invalid"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid user."
+ *       404:
+ *         description: "No bets found"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "No bet history found"
+ *       500:
+ *         description: "Internal server error"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "An error occurred while fetching bet history"
+ *                 error:
+ *                   type: string
+ *                   example: "Database query failed"
+ */
