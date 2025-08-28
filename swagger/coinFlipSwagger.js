@@ -212,14 +212,14 @@
 
 /**
  * @swagger
- * /api/coin-flip/history:
+ * /api/limbo/history:
  *   get:
- *     summary: "Get paginated coin flip history for the logged-in user"
- *     description: "Returns the user's coin flip betting history within the last 3 days, including bet status, amount, prediction, and match results."
+ *     summary: "Get paginated Limbo bet history for the logged-in user"
+ *     description: "Returns the user's Limbo betting history, including bet status, win amount, wallet balance, and multipliers."
  *     tags:
- *       - Coin Flip
+ *       - Limbo
  *     security:
- *       - bearerAuth: []  # Assumes bearer token authentication
+ *       - bearerAuth: []   # Uses bearer token authentication
  *     parameters:
  *       - in: query
  *         name: page
@@ -231,11 +231,11 @@
  *         name: perPage
  *         schema:
  *           type: integer
- *           default: 5
+ *           default: 10
  *         description: "Number of records to return per page"
  *     responses:
  *       200:
- *         description: "Coin flip history retrieved successfully"
+ *         description: "Limbo bet history retrieved successfully"
  *         content:
  *           application/json:
  *             schema:
@@ -246,13 +246,13 @@
  *                   example: true
  *                 count:
  *                   type: integer
- *                   example: 12
+ *                   example: 25
  *                 currentPage:
  *                   type: integer
  *                   example: 1
  *                 perPage:
  *                   type: integer
- *                   example: 5
+ *                   example: 10
  *                 totalPages:
  *                   type: integer
  *                   example: 3
@@ -261,26 +261,34 @@
  *                   items:
  *                     type: object
  *                     properties:
- *                       match_title:
- *                         type: string
- *                         example: "Team A vs Team B"
- *                       bet_status:
+ *                       limbo_id:
+ *                         type: integer
+ *                         example: 101
+ *                       bet_amount:
+ *                         type: number
+ *                         example: 50
+ *                       target_multiplier:
+ *                         type: number
+ *                         format: float
+ *                         example: 2.0
+ *                       bet_multiplier:
+ *                         type: number
+ *                         format: float
+ *                         example: 1.8
+ *                       status:
  *                         type: string
  *                         enum: [Win, Loss]
  *                         example: "Win"
- *                       amount:
+ *                       win_amount:
  *                         type: number
- *                         example: 50
- *                       prediction:
- *                         type: string
- *                         example: "Team A"
- *                       final_result:
- *                         type: string
- *                         example: "Team A"
- *                       bet_date:
+ *                         example: 75
+ *                       wallet_amount:
+ *                         type: number
+ *                         example: 1200
+ *                       created_at:
  *                         type: string
  *                         format: date-time
- *                         example: "2025-08-05T14:30:00Z"
+ *                         example: "2025-08-28T10:00:00Z"
  *       401:
  *         description: "Unauthorized"
  *         content:
@@ -291,6 +299,16 @@
  *                 message:
  *                   type: string
  *                   example: "Invalid user."
+ *       404:
+ *         description: "No bet history found"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "No bet history found for this user."
  *       500:
  *         description: "Internal server error"
  *         content:
@@ -300,5 +318,5 @@
  *               properties:
  *                 error:
  *                   type: string
- *                   example: "Error occurred while fetching coin flip history."
+ *                   example: "An error occurred while fetching Limbo bet history."
  */
