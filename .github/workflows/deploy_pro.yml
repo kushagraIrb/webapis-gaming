@@ -1,0 +1,86 @@
+name: Deploy to Production Server
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GamingRewampPVTSSHKey }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add server to known_hosts
+        run: ssh-keyscan -H 82.27.0.172 >> ~/.ssh/known_hosts
+
+      - name: Copy files to the server
+        run: |
+          rsync -avz --delete \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='app.log' \
+            --exclude='access.log' \
+            --exclude='uploads/' \
+            --exclude='info/' \
+            --exclude='errors/' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            ./ root@82.27.0.172:/www/wwwroot/ganingnewbackend.development-review.net/
+
+      - name: Set execute permissions for files
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 \
+            "chmod -R 755 /www/wwwroot/ganingnewbackend.development-review.net"
+
+      - name: Install dependencies and rebuild native modules
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 bash << 'EOF'
+            set -e  # Exit immediately if any command fails
+            export NVM_DIR='/www/server/nvm'
+            source $NVM_DIR/nvm.sh
+            nvm use default --silent
+
+            cd /www/wwwroot/ganingnewbackend.development-review.net
+
+            echo ">>> Node: $(node -v), NPM: $(npm -v)"
+            echo ">>> Running npm install..."
+            npm install --prefer-offline
+
+            echo ">>> Rebuilding bcrypt..."
+            npm rebuild bcrypt --build-from-source
+
+            echo ">>> Dependencies installed successfully"
+          EOF
+
+      - name: Restart application with PM2
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 bash << 'EOF'
+            set -e
+            export NVM_DIR='/www/server/nvm'
+            source $NVM_DIR/nvm.sh
+            nvm use default --silent
+
+            cd /www/wwwroot/ganingnewbackend.development-review.net
+
+            echo ">>> Restarting PM2 process..."
+            if pm2 describe gamingLive > /dev/null 2>&1; then
+              pm2 restart gamingLive
+            else
+              pm2 start app.js --name gamingLive
+            fi
+
+            pm2 save
+            echo ">>> PM2 status:"
+            pm2 list
+          EOF

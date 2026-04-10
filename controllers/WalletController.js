@@ -28,7 +28,7 @@ class WalletController {
             });
         } catch (error) {
             console.error('Error fetching wallet history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching wallet history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -53,7 +53,7 @@ class WalletController {
             });
         } catch (error) {
             console.error('Error fetching wallet amount:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching wallet amount: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ status: false, message: 'An error occurred', error: error.message });
         }

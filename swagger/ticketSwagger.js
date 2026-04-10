@@ -1,5 +1,51 @@
 /**
  * @swagger
+ * /api/ticket/close-ticket/{ticket_id}:
+ *   put:
+ *     summary: Close a ticket by ticket ID
+ *     description: >
+ *       Closes all support ticket rows associated with the token number of the provided `ticket_id`.
+ *       This is useful when a ticket has multiple entries, and all need to be marked as Closed together.
+ *       Closing a ticket means updating the status to `'Close'` for all entries sharing the same token number.
+ *     tags:
+ *       - Ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticket_id
+ *         required: true
+ *         description: Unique ID of the ticket to close (used to find related token_no).
+ *         schema:
+ *           type: integer
+ *           example: 12345
+ *     responses:
+ *       200:
+ *         description: Successfully closed the ticket and its related entries.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 closedCount:
+ *                   type: integer
+ *                   example: 3
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket closed successfully."
+ *       400:
+ *         description: Bad request. Ticket ID missing or invalid.
+ *       401:
+ *         description: Unauthorized. User is not authenticated.
+ *       404:
+ *         description: Ticket not found.
+ *       500:
+ *         description: Internal server error.
+ */
+
+/**
+ * @swagger
  * /api/ticket/history:
  *   get:
  *     summary: Fetch token history for a user

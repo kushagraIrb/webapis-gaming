@@ -4,22 +4,24 @@ const moment = require('moment');
 class WithdrawalModel {
     // Get last withdrawal Date for a user
     static async fetchLastWithdrawalDateById(userId) {
+        // return "HELLO";
         const query = `SELECT withdrawal_date FROM tbl_withdrawal WHERE user_id = ? AND status = 1 ORDER BY withdrawal_date DESC LIMIT 1`;
-    
+
         try {
             const [rows] = await db.promise().query(query, [userId]);
-    
+
             if (!rows.length) return null; // No withdrawal found
-    
+
             // Convert UTC to local time using Moment.js
-            const withdrawalDate = moment(rows[0].withdrawal_date).format("YYYY-MM-DD HH:mm:ss");
-    
+            // const withdrawalDate = moment(rows[0].withdrawal_date).format("YYYY-MM-DD HH:mm:ss");
+            const withdrawalDate = rows[0].withdrawal_date;
+
             return withdrawalDate;
         } catch (error) {
             console.error("Error in finding recent withdrawals:", error.message);
             throw error;
         }
-    } 
+    }
 
     // Save withdrawal data to the database
     static async saveWithdrawal(withdrawalData) {
@@ -77,6 +79,18 @@ class WithdrawalModel {
         } catch (error) {
             console.error("Error in finding pending withdrawal:", error.message);
             throw error;
+        }
+    }
+
+    static async findPrimaryAccount(userId) {
+        const query = `SELECT * FROM tbl_user_account WHERE user_id = ? AND primary_account = 1 LIMIT 1`;
+
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows[0] || null; // return the primary account if exists
+        } catch (error) {
+            console.error("Error finding primary account:", error.message);
+            throw new Error("Failed to fetch primary account");
         }
     }
 
@@ -194,7 +208,7 @@ class WithdrawalModel {
     static async saveFastWithdrawal(withdrawalData) {
         // Get the current time in IST
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-      
+
         const query = `INSERT INTO tbl_withdrawal (user_id, bank_name, account_number, ifsc, holder_name, pan_number, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, withdrawal_amount, charge_percent, withdrawal_option, withdrawal_text, fast_withdrawal, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1,?)`;
 
         try {
@@ -223,6 +237,67 @@ class WithdrawalModel {
             throw error;
         }
     }
+
+    static async fetchPendingRequestsCount(userId) {
+        try {
+            const pendingQuery = `
+                SELECT COUNT(*) AS pendingCount 
+                FROM tbl_withdrawal 
+                WHERE user_id = ? AND status = '0'
+            `;
+
+            const [pendingResult] = await db.promise().query(pendingQuery, [userId]);
+            const count = pendingResult[0].pendingCount;
+
+            return count > 0 ? 1 : 0;
+
+        } catch (error) {
+            console.error('Error in fetchPendingRequestsCount model:', error.message);
+            throw error;
+        }
+    }
+
+    //function to get the allowed time and status for withdrawl
+    static async getWithdrawalTime() {
+        const query = `
+            SELECT from_time1, to_time1, from_time2, to_time2 
+            FROM tbl_with_button 
+            LIMIT 1
+        `;
+
+        try {
+            const [rows] = await db.promise().query(query);
+
+            if (!rows.length) {
+                return { allowed: 0 };
+            }
+
+            const t = rows[0];
+
+            // Current time in IST (HH:mm:ss)
+            const now = moment().tz("Asia/Kolkata").format("HH:mm:ss");
+            const current = moment(now, "HH:mm:ss");
+
+            const range1Start = moment(t.from_time1, "HH:mm:ss");
+            const range1End = moment(t.to_time1, "HH:mm:ss");
+
+            const range2Start = moment(t.from_time2, "HH:mm:ss");
+            const range2End = moment(t.to_time2, "HH:mm:ss");
+
+            // Check if inside any allowed window
+            const allowed =
+                current.isBetween(range1Start, range1End, null, "[]") ||
+                current.isBetween(range2Start, range2End, null, "[]");
+
+            return { allowed: allowed ? 1 : 0 };
+
+        } catch (error) {
+            console.error("Error getting withdrawal time:", error.message);
+            throw error;
+        }
+    }
+
+    //function ends here
 }
 
 module.exports = WithdrawalModel;

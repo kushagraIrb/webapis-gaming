@@ -45,6 +45,43 @@ class TransactionHistoryModel {
             throw error;
         }
     }
+    
+    static async checkAdminTransferBypass(userId, transId) {
+        const query = `
+            SELECT t.t_status, wd.reasons
+            FROM tbl_transaction_history t
+            JOIN tbl_with_dep wd ON wd.tid = t.d_w_id
+            WHERE t.user_id = ?
+            AND t.trans_id > ?
+            AND (
+                (t.t_status = 'Withdrawal by Admin' AND wd.reasons = 'TRANSFER FROM APP TO ID')
+                OR
+                (t.t_status = 'Deposit by Admin' AND wd.reasons = 'TRANSFER FROM ID TO APP')
+            )
+        `;
+    
+        try {
+            const [rows] = await db.promise().query(query, [userId, transId]);
+    
+            let hasWithdrawal = false;
+            let hasDeposit = false;
+    
+            rows.forEach(row => {
+                if (row.t_status === 'Withdrawal by Admin' && row.reasons === 'TRANSFER FROM APP TO ID') {
+                    hasWithdrawal = true;
+                }
+                if (row.t_status === 'Deposit by Admin' && row.reasons === 'TRANSFER FROM ID TO APP') {
+                    hasDeposit = true;
+                }
+            });
+    console.log('hasWithdrawal: ',hasWithdrawal,' hasDeposit: ',hasDeposit);
+            return hasWithdrawal && hasDeposit;
+    
+        } catch (error) {
+            console.error("Error in checkAdminTransferBypass:", error.message);
+            throw error;
+        }
+    }
 }
 
 module.exports = TransactionHistoryModel;

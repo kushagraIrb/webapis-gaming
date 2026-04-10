@@ -10,8 +10,8 @@ class ContactUsController {
             // Respond with success and return the fetched data
             return res.status(200).send({ success: true, data: contactDetails });
         } catch (error) {
-            console.error('Error handling contact form submission:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            console.error('Error fetching contact us details:', error.message);
+            logger.error(`Error fetching contact us details: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred.', error: error.message });
         }
@@ -40,7 +40,7 @@ class ContactUsController {
             });
         } catch (error) {
             console.error('Error handling contact form submission:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error handling contact form submission: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred.', error: error.message });
         }

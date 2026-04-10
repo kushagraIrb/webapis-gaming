@@ -10,7 +10,7 @@ class RulesController {
             return res.status(200).send(rulesData);
         } catch (error) {
             console.error('Error fetching rules data:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching rules data: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }

@@ -1,4 +1,3 @@
-// Import all routers in one array for easy scalability
 const routes = [
     { path: '/api/users', router: require('../routes/userRouter') },
     { path: '/api/wallet', router: require('../routes/walletRouter') },
@@ -18,6 +17,12 @@ const routes = [
     { path: '/api/notifications', router: require('../routes/notificationRouter') },
     { path: '/api/bonus', router: require('../routes/bonusRouter') },
     { path: '/api/win-list', router: require('../routes/winListRouter') },
+    { path: '/api/coin-flip', router: require('../routes/coinFlipRouter') },
+    { path: '/api/limbo', router: require('../routes/limboRouter') },
+    { path: '/api/home-slider', router: require('../routes/homeSliderRouter') },
+    { path: '/api/user-dashboard', router: require('../routes/dashboardRoutes') },
+    { path: '/api/with-proof', router: require('../routes/withdrawalProofRouter') },
+    { path: '/api/match-id', router: require('../routes/matchIdRouter.js') },
 ];
 
 module.exports = (app) => {

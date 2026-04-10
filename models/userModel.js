@@ -20,18 +20,18 @@ class UserModel {
             throw new Error('Database query error');
         }
     }
-    
+
     static async getBonusIdByUserId(userId) {
         try {
-          const query = `SELECT bonus_league_id FROM tbl_registration WHERE id = ?`;
-          const [rows] = await db.promise().query(query, [userId]);
-          return rows.length ? rows[0] : null;
+            const query = `SELECT bonus_league_id FROM tbl_registration WHERE id = ?`;
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length ? rows[0] : null;
         } catch (error) {
-          console.error('Error fetching user:', error);
-          throw new Error('Error fetching user.');
+            console.error('Error fetching user:', error);
+            throw new Error('Error fetching user.');
         }
     }
-    
+
     // Fetch user's current tokens
     static async fetchTokens(userId) {
         try {
@@ -71,12 +71,12 @@ class UserModel {
 
     static async getUserByIdAndEmail(userId, email) {
         try {
-          const query = `SELECT * FROM tbl_registration WHERE id = ? AND email = ?`;
-          const [rows] = await db.promise().query(query, [userId, email]);
-          return rows.length ? rows[0] : null;
+            const query = `SELECT * FROM tbl_registration WHERE id = ? AND email = ?`;
+            const [rows] = await db.promise().query(query, [userId, email]);
+            return rows.length ? rows[0] : null;
         } catch (error) {
-          console.error('Error fetching user:', error);
-          throw new Error('Error fetching user.');
+            console.error('Error fetching user:', error);
+            throw new Error('Error fetching user.');
         }
     }
 
@@ -123,14 +123,14 @@ class UserModel {
             `SELECT MAX(bonus_id) AS bonus_id FROM tbl_bonus_history WHERE user_id = ?`,
             [userId]
         );
-    
+
         // Step 2: If a bonus_id is found, fetch the `total_bonus` for that `bonus_id`
         if (result && result.bonus_id) {
             const [bonusResult] = await db.promise().query(
                 `SELECT total_bonus FROM tbl_bonus_history WHERE bonus_id = ?`,
                 [result.bonus_id]
             );
-    
+
             // Step 3: Return the total bonus or 0 if no bonus is found
             if (bonusResult && bonusResult.length > 0) {
                 return bonusResult[0].total_bonus;
@@ -138,15 +138,54 @@ class UserModel {
                 return 0;
             }
         }
-    
+
         // If no bonus_id found, return 0
         return 0;
+    }
+
+    static async checkUserNameExists(firstName, lastName, userId = null) {
+        let query, params;
+
+        if (lastName) {
+            query = `
+                SELECT COUNT(*) AS count 
+                FROM tbl_registration 
+                WHERE first_name = ? AND last_name = ?
+            `;
+            params = [firstName, lastName];
+        } else {
+            query = `
+                SELECT COUNT(*) AS count 
+                FROM tbl_registration 
+                WHERE first_name = ? AND (last_name IS NULL OR last_name = '')
+            `;
+            params = [firstName];
+        }
+
+        // If it's an existing user, exclude their own record
+        if (userId) {
+            query += ` AND id != ?`;
+            params.push(userId);
+        }
+
+        const [rows] = await db.promise().query(query, params);
+        return rows[0].count > 0;
+    }
+
+    static async updateUserName(userId, firstName, lastName) {
+        const query = `
+            UPDATE tbl_registration 
+            SET first_name = ?, last_name = ?
+            WHERE id = ?
+        `;
+        const [result] = await db.promise().query(query, [firstName, lastName, userId]);
+        return result.affectedRows > 0;
     }
 
     static async checkOtp(email, phone, otp) {
         const query = `SELECT otp FROM otp_verified WHERE email = ? AND phone = ? ORDER BY id DESC LIMIT 1`;
         const [result] = await db.promise().query(query, [email, phone]);
-    
+
         // Check if the OTP matches
         if (result.length === 0 || result[0].otp !== String(otp)) {
             return false;
@@ -157,24 +196,24 @@ class UserModel {
     static async createUser(firstName, lastName, email, hashedPassword, phone, pincode, userState, isEighteen, isRefer = 0, userRefcode = null, adminRefcode = null, ipAddress) {
         // Get the current time in IST
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-    
+
         let query = `INSERT INTO tbl_registration 
             (first_name, email, password, phone, pincode, state, is_eighteen, is_verified, isRefer, isRefer_to, admin_referral, user_status, created, modified, ip_address, status, ip_status, bonus_league_id) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-        
+
         let queryParams = [firstName, email, hashedPassword, phone, pincode, userState, isEighteen, 1, isRefer, userRefcode, adminRefcode, "active", istTime, istTime, ipAddress, 1, 1, 1];
-    
+
         if (lastName) {
             query = `INSERT INTO tbl_registration 
                 (first_name, last_name, email, password, phone, pincode, state, is_eighteen, is_verified, isRefer, isRefer_to, admin_referral, user_status, created, modified, ip_address, status, ip_status, bonus_league_id) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-            
+
             queryParams = [firstName, lastName, email, hashedPassword, phone, pincode, userState, isEighteen, 1, isRefer, userRefcode, adminRefcode, "active", istTime, istTime, ipAddress, 1, 1, 1];
         }
-    
+
         const [result] = await db.promise().query(query, queryParams);
         return result;
-    }    
+    }
 
     static async updateUser(LastUserID, arrData) {
         const [result] = await db.promise().query(
@@ -195,7 +234,7 @@ class UserModel {
         );
         return result.insertId;
     }
-    
+
     // Insert bonus history into the database
     static async insertBonusHistory(referaalId, userId, creditBonus, totalBonus, bonusType, bonusStatus, adminRefcode) {
         // Get the current time in IST
@@ -213,21 +252,50 @@ class UserModel {
         return query;
     }
 
+    // static async updateSessionToken(userId, accessToken, refreshToken) {
+    //     const query = `UPDATE tbl_registration SET session_token = ?, refresh_token = ? WHERE id = ?`;
+    //     return db.execute(query, [accessToken, refreshToken, userId]);
+    // }
+    
     static async updateSessionToken(userId, accessToken, refreshToken) {
         const query = `UPDATE tbl_registration SET session_token = ?, refresh_token = ? WHERE id = ?`;
-        return db.execute(query, [accessToken, refreshToken, userId]);
-    }
-
-    static async insertinLog(logData) {
-        // Get the current time in IST
-        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-        const [result] = await db.promise().query(
-            `INSERT INTO temp_login_log (phone, password, result, query, ip_address, browser_info, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [logData.phone, logData.password, logData.result, logData.query, logData.ip_address, logData.browser_info, istTime]
-        );
+        // ADDED await and .promise()
+        const [result] = await db.promise().execute(query, [accessToken, refreshToken, userId]);
         return result;
     }
+    
+    static async insertinLog(logData) {
+        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+    
+        const [result] = await db.promise().query(
+            `INSERT INTO temp_login_log 
+            (phone, password, result, query, ip_address, browser_info, api_response, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                logData.phone,
+                logData.password,
+                logData.result,
+                logData.query,
+                logData.ip_address,
+                logData.browser_info,
+                logData.api_response,
+                istTime
+            ]
+        );
+    
+        return result;
+    }
+
+    // static async insertinLog(logData) {
+    //     // Get the current time in IST
+    //     const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+    //     const [result] = await db.promise().query(
+    //         `INSERT INTO temp_login_log (phone, password, result, query, ip_address, browser_info, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    //         [logData.phone, logData.password, logData.result, logData.query, logData.ip_address, logData.browser_info, istTime]
+    //     );
+    //     return result;
+    // }
 
     static async updateUserIpAddress(ipAddress, phone) {
         try {
@@ -247,23 +315,23 @@ class UserModel {
             // Step 1: Get bonus_league_id from tbl_registration
             const leagueQuery = `SELECT bonus_league_id FROM tbl_registration WHERE id = ?`;
             const [leagueResult] = await db.promise().query(leagueQuery, [userId]);
-    
+
             if (!leagueResult.length || !leagueResult[0].bonus_league_id) {
                 return null; // Return null if no league ID found
             }
-    
+
             const bonusLeagueId = leagueResult[0].bonus_league_id;
-    
+
             // Step 2: Get league_name from tbl_bonus_league using bonus_league_id
             const nameQuery = `SELECT league_name FROM tbl_bonus_league WHERE id = ?`;
             const [nameResult] = await db.promise().query(nameQuery, [bonusLeagueId]);
-    
+
             return nameResult.length ? nameResult[0].league_name : null;
         } catch (error) {
             console.error('Error updating user IP address:', error);
             throw new Error('Error fetching bonus league info');
         }
-    }    
+    }
 
     static async TotalEarnAmount(userId) {
         try {
@@ -302,15 +370,15 @@ class UserModel {
 
         let query = `UPDATE tbl_registration SET first_name = ?, profile_image = ?, modified = ?`;
         let queryParams = [profileData.first_name, profileData.profile_image, istTime];
-    
+
         if (profileData.last_name) {
             query += `, last_name = ?`;
             queryParams.push(profileData.last_name);
         }
-    
+
         query += ` WHERE id = ?`;
         queryParams.push(userId);
-    
+
         const [result] = await db.promise().query(query, queryParams);
         return result;
     }
@@ -319,7 +387,7 @@ class UserModel {
         // Step 1: Update existing accounts to remove primary status
         const updateQuery = `UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ?`;
         const [updateResult] = await db.promise().query(updateQuery, [userId]);
-    
+
         // Check if update was successful (affectedRows > 0 means rows were updated)
         if (updateResult.affectedRows >= 0) {
             // Get the current time in IST
@@ -331,7 +399,7 @@ class UserModel {
                 (user_id, bank_name, account_number, ifsc, ac_holder_name, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, primary_account, modified) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             `;
-    
+
             const values = [
                 userId,
                 accountData.bank_name,
@@ -346,17 +414,17 @@ class UserModel {
                 accountData.paytm,
                 istTime
             ];
-    
+
             const [insertResult] = await db.promise().query(insertQuery, values);
             return insertResult;
         } else {
             throw new Error("Failed to update existing accounts.");
         }
-    }    
+    }
 
     static async fetchAccountDetails(userId) {
-        const query = `SELECT * FROM tbl_user_account WHERE user_id = ? ORDER BY ac_id DESC LIMIT 1`;
-    
+        const query = `SELECT * FROM tbl_user_account WHERE user_id = ? and primary_account=1 LIMIT 1`;
+
         const [result] = await db.promise().query(query, [userId]);
         return result;
     }
@@ -366,7 +434,7 @@ class UserModel {
         const [result] = await db.promise().query(query, [refreshToken]);
         return result[0] || null;
     }
-    
+
     static async clearRefreshToken(userId) {
         const query = `UPDATE tbl_registration SET refresh_token = NULL WHERE id = ?`;
         await db.promise().query(query, [userId]);

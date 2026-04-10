@@ -20,7 +20,7 @@ class BlogsController {
             });
         } catch (error) {
             console.error('Error fetching blogs:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching blogs: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({
                 msg: 'An error occurred',
@@ -47,7 +47,7 @@ class BlogsController {
             });
         } catch (error) {
             console.error('Error fetching blog details:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching blog details: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }

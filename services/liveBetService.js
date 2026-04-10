@@ -4,6 +4,8 @@ const moment = require('moment-timezone');
 const crypto = require('crypto');
 require("dotenv").config();
 
+const db = require('../config/database');
+
 class LiveBetService {
   static async homeListingMatches() {
     try {
@@ -67,81 +69,185 @@ class LiveBetService {
 
       return encrypted;
     }
+    
+     static async getLiveMatches(userId) {
+        try {
+            // Step 1: Fetch matches
+            const matches = await liveBetModel.fetchLiveMatches();
+            if (!matches.length) 
+                return [];
+    
+            const now = new Date(
+                new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+            );
 
-    static async getLiveMatches(userId) {
-      try {
-        const matches = await liveBetModel.fetchLiveMatches();
-        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-
-        const upcomingMatches = matches.filter(match => {
-          try {
-            const matchTimeArray = JSON.parse(match.match_time);
-            if (!Array.isArray(matchTimeArray) || matchTimeArray.length === 0) {
-              return false;
-            }
-
-            const matchDate = new Date(match.match_date);
-            if (isNaN(matchDate)) {
-              return false;
-            }
-
-            // Get first and last match times
-            const firstMatchTime = matchTimeArray[0];
-            const lastMatchTime = matchTimeArray.length > 1 ? matchTimeArray[matchTimeArray.length - 1] : firstMatchTime;
-
-            // Extract time values
-            const [firstHours, firstMinutes] = firstMatchTime.split(":").map(Number);
-            const [lastHours, lastMinutes] = lastMatchTime.split(":").map(Number);
-
-            // Create date objects for first and last match times
-            const firstMatchDate = new Date(matchDate);
-            firstMatchDate.setHours(firstHours, firstMinutes, 0, 0);
-
-            const lastMatchDate = new Date(matchDate);
-            lastMatchDate.setHours(lastHours, lastMinutes, 0, 0);
-
-            // Adjust lastMatchDate if it crosses midnight
-            if (lastHours < firstHours || (lastHours === firstHours && lastMinutes < firstMinutes)) {
-              lastMatchDate.setDate(lastMatchDate.getDate() + 1);
-            }
-
-            // Display match if last match time is in the future
-            return lastMatchDate > now;
-          } catch (err) {
-            return false;
-          }
-        });
-
-        const matchIds = upcomingMatches.map(match => match.id);
-        const userBets = await liveBetModel.getUserBetIds(userId, matchIds);
-
-        for (const match of upcomingMatches) {
-          const encryptedId = await this.encryptId(match.id);
-          await liveBetModel.updateEncryptedId(match.id, encryptedId);
-          match.encrypted_id = encryptedId;
-
-          // Include bet_id only if the current time is less than the first match time
-          const matchTimeArray = JSON.parse(match.match_time);
-          if (!Array.isArray(matchTimeArray) || matchTimeArray.length === 0) {
-            match.bet_id = null;
-            continue;
-          }
-
-          const firstMatchTime = matchTimeArray[0];
-          const [firstHours, firstMinutes] = firstMatchTime.split(":").map(Number);
-
-          const firstMatchDate = new Date(match.match_date);
-          firstMatchDate.setHours(firstHours, firstMinutes, 0, 0);
-
-          match.bet_id = now < firstMatchDate ? (userBets[match.id] || null) : null;
+            // Step 2: Parse match_time ONCE
+            const parsedMatches = matches.map(match => {
+                let matchTimeArray = [];
+    
+                try {
+                    matchTimeArray = JSON.parse(match.match_time);
+                } catch (e) {
+                    matchTimeArray = [];
+                }
+    
+                return {
+                    ...match,
+                    matchTimeArray
+                };
+            });
+    
+            const matchIds = parsedMatches.map(m => Number(m.id));
+    
+            // Step 3: FULL PARALLEL EXECUTION 🔥
+            const [userBetsMap, encryptedIds] = await Promise.all([
+                liveBetModel.getUserBetIds(userId, matchIds),
+    
+                Promise.all(
+                    parsedMatches.map(m => this.encryptId(m.id))
+                )
+            ]);
+    
+            // Step 4: CLEAN MAPPING (single pass)
+            const finalMatches = parsedMatches.map((match, index) => {
+                let bet_id = null;
+    
+                const times = match.matchTimeArray;
+    
+                if (times.length > 0 && match.match_date instanceof Date) {
+                    // ✅ ONLY FIRST TIME (start of match)
+                    const firstTime = times[0];
+                    const [hours, minutes] = firstTime.split(":").map(Number);
+    
+                    const year = match.match_date.getFullYear();
+                    const month = match.match_date.getMonth();
+                    const day = match.match_date.getDate();
+    
+                    const firstMatchDate = new Date(year,month,day,hours,minutes,0,0);
+    
+                    // 🎯 CORE LOGIC
+                    if (now.getTime() < firstMatchDate.getTime()) {
+                        // BEFORE match start → show bet
+                        bet_id = userBetsMap[match.id] || null;
+                    } else {
+                        // AFTER match start → always null
+                        bet_id = null;
+                    }
+                }
+    
+                return {
+                    id: match.id,
+                    encrypted_id: encryptedIds[index],
+    
+                    team_one_id: match.team_one_id,
+                    team_one_name: match.team_one_name,
+                    team_one_logo: match.team_one_logo,
+    
+                    team_two_id: match.team_two_id,
+                    team_two_name: match.team_two_name,
+                    team_two_logo: match.team_two_logo,
+    
+                    match_name: match.match_name,
+                    match_date: match.match_date,
+                    match_time: match.match_time,
+    
+                    match_title: match.match_title,
+                    match_address: match.match_address,
+                    win_ratio: match.win_ratio,
+                    max_bet: match.max_bet,
+                    
+                    userBy: match.userBy,
+                    modified: match.modified,
+    
+                    isLive: match.isLive,
+                    status: match.status,
+    
+                    bet_id
+                };
+            });
+    
+            return finalMatches;
+    
+        } catch (error) {
+            console.error('Error in getLiveMatches:', error.message);
+            throw new Error('Failed to fetch live matches');
         }
-
-        return upcomingMatches;
-      } catch (error) {
-        console.error('Error fetching live:', error.message);
-        throw new Error('Failed to fetch live matches');
-      }
     }
+
+    // static async getLiveMatches(userId) {
+    //   try {
+    //     const matches = await liveBetModel.fetchLiveMatches();
+    //     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+
+    //     const upcomingMatches = matches.filter(match => {
+    //       try {
+    //         const matchTimeArray = JSON.parse(match.match_time);
+    //         if (!Array.isArray(matchTimeArray) || matchTimeArray.length === 0) {
+    //           return false;
+    //         }
+
+    //         const matchDate = new Date(match.match_date);
+    //         if (isNaN(matchDate)) {
+    //           return false;
+    //         }
+
+    //         // Get first and last match times
+    //         const firstMatchTime = matchTimeArray[0];
+    //         const lastMatchTime = matchTimeArray.length > 1 ? matchTimeArray[matchTimeArray.length - 1] : firstMatchTime;
+
+    //         // Extract time values
+    //         const [firstHours, firstMinutes] = firstMatchTime.split(":").map(Number);
+    //         const [lastHours, lastMinutes] = lastMatchTime.split(":").map(Number);
+
+    //         // Create date objects for first and last match times
+    //         const firstMatchDate = new Date(matchDate);
+    //         firstMatchDate.setHours(firstHours, firstMinutes, 0, 0);
+
+    //         const lastMatchDate = new Date(matchDate);
+    //         lastMatchDate.setHours(lastHours, lastMinutes, 0, 0);
+
+    //         // Adjust lastMatchDate if it crosses midnight
+    //         if (lastHours < firstHours || (lastHours === firstHours && lastMinutes < firstMinutes)) {
+    //           lastMatchDate.setDate(lastMatchDate.getDate() + 1);
+    //         }
+
+    //         // Display match if last match time is in the future
+    //         return lastMatchDate > now;
+    //       } catch (err) {
+    //         return false;
+    //       }
+    //     });
+
+    //     const matchIds = upcomingMatches.map(match => match.id);
+    //     const userBets = await liveBetModel.getUserBetIds(userId, matchIds);
+
+    //     for (const match of upcomingMatches) {
+    //       const encryptedId = await this.encryptId(match.id);
+    //       await liveBetModel.updateEncryptedId(match.id, encryptedId);
+    //       match.encrypted_id = encryptedId;
+
+    //       // Include bet_id only if the current time is less than the first match time
+    //       const matchTimeArray = JSON.parse(match.match_time);
+    //       if (!Array.isArray(matchTimeArray) || matchTimeArray.length === 0) {
+    //         match.bet_id = null;
+    //         continue;
+    //       }
+
+    //       const firstMatchTime = matchTimeArray[0];
+    //       const [firstHours, firstMinutes] = firstMatchTime.split(":").map(Number);
+
+    //       const firstMatchDate = new Date(match.match_date);
+    //       firstMatchDate.setHours(firstHours, firstMinutes, 0, 0);
+
+    //       match.bet_id = now < firstMatchDate ? (userBets[match.id] || null) : null;
+    //     }
+
+    //     return upcomingMatches;
+    //   } catch (error) {
+    //     console.error('Error fetching live:', error.message);
+    //     throw new Error('Failed to fetch live matches');
+    //   }
+    // }
   
     // static async getPastMatches() {
     //     try {
@@ -151,6 +257,65 @@ class LiveBetService {
     //         throw new Error('Failed to fetch past matches');
     //     }
     // }
+    
+    static async getFullMatchData(encryptedMatchId, userId) {
+        try {
+            // Parallel independent queries
+            const [match, minBetAmount] = await Promise.all([
+                liveBetModel.fetchMatchById(encryptedMatchId),
+                liveBetModel.fetchMinBetAmount()
+            ]);
+    
+            if (!match) throw new Error("Match not found");
+    
+            // SINGLE DB CALL
+            const stats = await liveBetModel.fetchMatchStats(
+                match.id,
+                match.team_one_id,
+                match.team_two_id
+            );
+    
+            const totalUsers = stats.totalUsers || 0;
+            const teamOneUsers = stats.teamOneUsers || 0;
+            const teamTwoUsers = stats.teamTwoUsers || 0;
+    
+            // Compute ratios
+            const teamOneTossRatio = totalUsers > 0 ? (teamOneUsers / totalUsers) * 100 : 0;
+            const teamTwoTossRatio = totalUsers > 0 ? (teamTwoUsers / totalUsers) * 100 : 0;
+    
+            return {
+                matchDetails: {
+                    id: match.id,
+                    encrypted_id: match.encrypted_id,
+    
+                    team_one_id: match.team_one_id,
+                    team_one_name: match.team_one_name,
+                    team_one_logo: match.team_one_logo,
+    
+                    team_two_id: match.team_two_id,
+                    team_two_name: match.team_two_name,
+                    team_two_logo: match.team_two_logo,
+    
+                    match_name: match.match_name,
+                    match_date: match.match_date,
+                    match_time: match.match_time,
+                    match_title: match.match_title,
+                    match_address: match.match_address,
+    
+                    win_ratio: match.win_ratio,
+                    max_bet: match.max_bet,
+    
+                    teamOneTossRatio: teamOneTossRatio.toFixed(2),
+                    teamTwoTossRatio: teamTwoTossRatio.toFixed(2),
+                },
+                minBetAmount
+            };
+    
+        } catch (error) {
+            console.error("Error:", error.message);
+            throw new Error("Failed to fetch match data");
+        }
+    }
 
     static async getMatchDetails(encryptedMatchId) {
       try {
@@ -175,16 +340,6 @@ class LiveBetService {
           console.error("Error fetching live match details:", error.message);
           throw new Error("Failed to fetch live match details");
       }
-    }  
-
-    static async getTossTypes() {
-        try {
-            return await liveBetModel.fetchTossTypes();
-        } catch (error) {
-            console.error('Error fetching toss type:', error.message);
-            throw new Error('Failed to fetch toss type');
-        }
-        
     }
 
     static async getMinBetAmount() {
@@ -193,6 +348,16 @@ class LiveBetService {
         } catch (error) {
             console.error('Error fetching minimum bet amount:', error.message);
             throw new Error('Failed to fetch minimum bet amount');
+        }
+        
+    }
+    
+    static async getTossTypes() {
+        try {
+            return await liveBetModel.fetchTossTypes();
+        } catch (error) {
+            console.error('Error fetching toss type:', error.message);
+            throw new Error('Failed to fetch toss type');
         }
         
     }
@@ -228,6 +393,15 @@ class LiveBetService {
         }
       } catch (error) {
         throw new Error('Error checking winner announcement');
+      }
+    }
+
+    static async isUserRestrictedFromBetting(userId) {
+      try {
+        const hasDisallowed = await liveBetModel.hasDisallowedBetsInLastWeek(userId);
+        return hasDisallowed;
+      } catch (error) {
+        throw new Error('Error determining betting restriction');
       }
     }
 
@@ -531,57 +705,234 @@ class LiveBetService {
     }
 
     static async getExtraTimeList() {
-      try {
-        const matches = await liveBetModel.fetchExtraTimeLiveMatches();
-        const todayDateTime = moment().tz('Asia/Kolkata'); // Get current time in Asia/Kolkata timezone
-
-        const processedMatches = matches
-            .map(match => {
-                const matchTimes = JSON.parse(match.match_time || '[]');
-
-                // Check if match_date is a valid Date object
-                let matchDate = match.match_date;
-
-                if (matchDate instanceof Date && !isNaN(matchDate)) {
-                    // If match_date is a valid Date object, format it as a string
-                    const matchDateStr = moment(matchDate).tz('Asia/Kolkata').format('YYYY-MM-DD'); // Convert to Asia/Kolkata timezone and format as 'YYYY-MM-DD'
-
-                    // Process each match time and create DateTime for comparison
-                    let validMatchFound = false;
-                    for (let matchTime of matchTimes) {
-                        // Construct full DateTime string combining match date and match time
-                        const matchDateTime = moment.tz(`${matchDateStr}T${matchTime}:00`, 'Asia/Kolkata');
-
-                        // Check if the match is in the future
-                        if (matchDateTime.isAfter(todayDateTime)) {
-                            validMatchFound = true;
-                            break; // If one match time is valid, we stop and include the match
+        try {
+            const matches = await liveBetModel.fetchExtraTimeLiveMatches();
+            const todayDateTime = moment().tz('Asia/Kolkata'); // Get current time in Asia/Kolkata timezone
+    
+            const processedMatches = matches
+                .map(match => {
+                    const matchTimes = JSON.parse(match.match_time || '[]');
+    
+                    // Check if match_date is a valid Date object
+                    let matchDate = match.match_date;
+    
+                    if (matchDate instanceof Date && !isNaN(matchDate)) {
+                        // If match_date is a valid Date object, format it as a string
+                        const matchDateStr = moment(matchDate).tz('Asia/Kolkata').format('YYYY-MM-DD'); // Convert to Asia/Kolkata timezone and format as 'YYYY-MM-DD'
+    
+                        // Process each match time and create DateTime for comparison
+                        let validMatchFound = false;
+                        for (let matchTime of matchTimes) {
+                            // Construct full DateTime string combining match date and match time
+                            const matchDateTime = moment.tz(`${matchDateStr}T${matchTime}:00`, 'Asia/Kolkata');
+    
+                            // Check if the match is in the future
+                            if (matchDateTime.isAfter(todayDateTime)) {
+                                validMatchFound = true;
+                                break; // If one match time is valid, we stop and include the match
+                            }
                         }
-                    }
-
-                    if (validMatchFound) {
-                        return {
-                            match_name: match.match_name,
-                            match_date: match.match_date,
-                            match_time: matchTimes, // Return match_time as an array
-                            win_ratio: JSON.parse(match.win_ratio || '[]') // Return win_ratio as an array
-                        };
+    
+                        if (validMatchFound) {
+                            return {
+                                match_name: match.match_name,
+                                match_date: match.match_date,
+                                match_time: matchTimes, // Return match_time as an array
+                                win_ratio: JSON.parse(match.win_ratio || '[]') // Return win_ratio as an array
+                            };
+                        } else {
+                            console.log(`Match ID: ${match.id} is in the past`);
+                        }
                     } else {
-                        console.log(`Match ID: ${match.id} is in the past`);
+                        console.log(`Match ID: ${match.id} has invalid match date`);
                     }
-                } else {
-                    console.log(`Match ID: ${match.id} has invalid match date`);
-                }
-
-                return null; // Properly filter invalid matches
-            })
-            .filter(match => match !== null);
-        return processedMatches;
-    } catch (error) {
-        console.error('Error fetching match list:', error.message);
-        throw new Error('Failed to fetch match list');
+    
+                    return null; // Properly filter invalid matches
+                })
+                .filter(match => match !== null);
+            return processedMatches;
+        } catch (error) {
+            console.error('Error fetching match list:', error.message);
+            throw new Error('Failed to fetch match list');
+        }
     }
-  }
+    
+    static calculateMatchStatus(match) {
+        const { match_date, match_time } = match;
+    
+        const matchDate = moment(match_date).tz('Asia/Kolkata').format('YYYY-MM-DD');
+    
+        const parsedTime = JSON.parse(match_time);
+    
+        const firstTime = parsedTime[0];
+        const lastTime = parsedTime[parsedTime.length - 1];
+    
+        const now = moment().tz('Asia/Kolkata');
+    
+        const firstMatch = moment.tz(`${matchDate} ${firstTime}`, 'YYYY-MM-DD HH:mm', 'Asia/Kolkata');
+        const lastMatch = moment.tz(`${matchDate} ${lastTime}`, 'YYYY-MM-DD HH:mm', 'Asia/Kolkata');
+    
+        return {
+            isFirstMatchTimePassed: now.isAfter(firstMatch),
+            isMatchOver: now.isAfter(lastMatch)
+        };
+    }
+    
+    static async preChecks(user_id, match_id) {
+        const [
+            betStatus,
+            winnerAnnounced,
+            bettingRestricted,
+            isCancelled,
+            matchStatus
+        ] = await Promise.all([
+            this.checkBettingStatus(),
+            this.checkWinnerAnnounced(match_id),
+            this.isUserRestrictedFromBetting(user_id),
+            this.isMatchCancelled(match_id),
+            this.isMatchOver(match_id)
+        ]);
+    
+        if (betStatus === '0') {
+            return { status: false, message: 'Betting is off' };
+        }
+    
+        if (winnerAnnounced) {
+            return { status: false, message: 'Winner announced' };
+        }
+    
+        if (bettingRestricted > 0) {
+            return { status: false, message: 'Betting restricted' };
+        }
+    
+        if (!isCancelled) {
+            return { status: false, message: 'Match cancelled' };
+        }
+    
+        if (matchStatus?.isMatchOver) {
+            return { status: false, message: 'Match over' };
+        }
+    
+        return { status: true };
+    }
+    
+    static async placeBetWithTransaction(data) {
+        const connection = await db.promise().getConnection();
+    
+        try {
+            await connection.beginTransaction();
+    
+            const { user_id, match_id, minimum_betamount, team_value, toss_id, bet_amount } = data;
+            
+            // 🔒 STEP 1: Lock match row (prevents time race condition)
+            const match = await liveBetModel.getMatchForUpdate(connection, match_id);
+    
+            if (!match) {
+                throw new Error('Match not found');
+            }
+    
+            const matchStatus = this.calculateMatchStatus(match);
+            const isExtraTime = matchStatus.isFirstMatchTimePassed;
+    
+            // 🔒 STEP 2: Lock wallet & bonus
+            const walletAmount = await liveBetModel.getWalletForUpdate(connection, user_id);
+            const bonusAmount = await liveBetModel.getBonusForUpdate(connection, user_id);
+            
+            const totalBalance = walletAmount + bonusAmount;
+            
+            if (bet_amount > totalBalance) {
+                throw new Error('Insufficient balance');
+            }
+            
+            if (bet_amount < minimum_betamount) {
+                throw new Error('Below minimum bet amount');
+            }
+            
+            // 🔒 STEP 3: Duplicate check ONLY in NORMAL time
+            if (!isExtraTime) {
+                const alreadyBet = await liveBetModel.checkExistingBetForUpdate(
+                    connection,
+                    user_id,
+                    match_id
+                );
+    
+                if (alreadyBet) {
+                    throw new Error('Bet already placed');
+                }
+            }
+            
+            // 💰 Calculation
+            let UsedBonus = 0, walletUsed = 0, remainingWallet = walletAmount;
+    
+            if (bonusAmount >= bet_amount) {
+                UsedBonus = bet_amount;
+            } else {
+                UsedBonus = bonusAmount;
+                walletUsed = bet_amount - bonusAmount;
+                remainingWallet = walletAmount - walletUsed;
+            }
+    
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+    
+            // ✅ Insert Bet
+            const betId = await liveBetModel.insertBet(connection, {
+                user_id,
+                match_id,
+                team_value,
+                toss_id,
+                bet_amount,
+                UsedBonus,
+                walletUsed,
+                istTime
+            });
+    
+            // ✅ Wallet transaction
+            if (walletUsed > 0) {
+                await liveBetModel.insertTransaction(connection, {
+                    betId,
+                    match_id,
+                    user_id,
+                    walletUsed,
+                    remainingWallet,
+                    istTime
+                });
+            }
+    
+            // ✅ Bonus history
+            if (UsedBonus > 0) {
+                await liveBetModel.insertBonus(connection, {
+                    user_id,
+                    betId,
+                    match_id,
+                    UsedBonus,
+                    bonusAmount,
+                    istTime
+                });
+            }
+    
+            // ✅ Report
+            await liveBetModel.insertReport(connection, {
+                betId,
+                user_id,
+                match_id,
+                team_value,
+                bet_amount,
+                UsedBonus,
+                walletUsed,
+                istTime
+            });
+    
+            await connection.commit();
+    
+            return { betId };
+    
+        } catch (error) {
+            await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }
 }
 
 module.exports = LiveBetService;

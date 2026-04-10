@@ -2,7 +2,39 @@ const { logger } = require('../logger');
 const ticketService = require('../services/ticketService');
 
 class TicketController {
-  // Fetch ticket types
+    // Delete Ticket
+    async closeTicketById(req, res) {
+        try {
+            const { ticket_id } = req.params;
+
+            if (!ticket_id) {
+                return res.status(400).json({ status: false, message: 'Ticket ID is required!' });
+            }
+
+            const result = await ticketService.closeTicketById(ticket_id);
+
+            return res.status(200).json({
+                status: true,
+                message: `Ticket closed successfully.`,
+                closedCount: result.closedCount,
+            });
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+
+            console.error('Error closing ticket by ID:', error.message);
+            
+            if (statusCode === 500) {
+                logger.error(`Error closing ticket by ID: ${error.message}`, { stack: error.stack });
+            }
+        
+            return res.status(statusCode).json({
+                status: false,
+                message: error.message || 'Something went wrong while closing the ticket.',
+            });
+        }
+    }
+
+    // Fetch ticket types
     async fetchTicketTypes(req, res) {
         try {
             const userId = req.user_id;
@@ -20,7 +52,7 @@ class TicketController {
             });
         } catch (error) {
             console.error('Error fetching ticket history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching ticket history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -48,6 +80,7 @@ class TicketController {
 
             // Save ticket
             const result = await ticketService.saveTicket(ticketData);
+            return res.status(200).json(result);
             if (result) {
                 return res.status(201).json({ status: true, message: 'Ticket generated successfully!', token_no: result.tokenNo });
             } else {
@@ -55,7 +88,7 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error saving ticket:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving ticket: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -73,16 +106,17 @@ class TicketController {
             const { page = 1, perPage = 10 } = req.query;
 
             // Fetch ticket history
-            const ticketHistory = await ticketService.getTicketHistory(userId, Number(page), Number(perPage));
+            const [data, total] = await ticketService.getTicketHistory(userId, Number(page), Number(perPage));
 
             return res.status(200).send({
                 status: true,
-                data: ticketHistory,
+                data,
+                count: total,
                 message: 'ticket history fetched successfully',
             });
         } catch (error) {
             console.error('Error fetching ticket history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching ticket history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -119,7 +153,7 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error saving reply:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving ticket reply: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -144,7 +178,7 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error fetching ticket data:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching ticket history data: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }

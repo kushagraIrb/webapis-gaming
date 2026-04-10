@@ -31,13 +31,22 @@ class DepositService {
         try {
             const { deposit_id, deposit_amount, deposit_amount_step1, deposit_date, bank_owner_name
             } = depositData;
+            
+            // Validate required fields
+            if (!deposit_id || !deposit_amount || !deposit_amount_step1 || !deposit_date || !bank_owner_name) {
+                const err = new Error('Some data is missing.');
+                err.statusCode = 400;
+                throw err;
+            }
 
             const deposit_screenshot = file ? file.filename : null;
 
             // Check if deposit ID already exists with status 1
             const existingDeposit = await depositModel.getDepositById(deposit_id);
             if (existingDeposit) {
-                throw new Error('This screenshot has already been approved. Please try again with a different screenshot.');
+                const err = new Error('This screenshot has already been approved. Please try again with a different screenshot.');
+                err.statusCode = 409;
+                throw err;
             }
 
             // Prepare deposit data
