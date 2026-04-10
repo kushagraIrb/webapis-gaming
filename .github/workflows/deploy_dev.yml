@@ -13,6 +13,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Comment out prod-only crons for dev
+        run: |
+          sed -i "s|require('./helpers/coinFlipCron.js');|// require('./helpers/coinFlipCron.js');|g" app.js
+
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
