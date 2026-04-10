@@ -3,7 +3,9 @@ const withdrawalService = require('../services/withdrawalService');
 
 class WithdrawalController {
     // Get last withdrawal Date for a user
-    async getLastWithdrawalDateById(req, res) {
+    async getLastWithdrawalDateById(req, res) 
+    {
+        // return "HELLO";
         try {
             const userId = req.user_id;
 
@@ -15,7 +17,7 @@ class WithdrawalController {
             return res.status(200).json({ status: true, withdrawal_date: result });
         } catch (error) {
             console.error('Error retrieving withdrawal history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error retrieving withdrawal history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -67,7 +69,7 @@ class WithdrawalController {
             }
         } catch (error) {
             console.error("Error saving withdrawal:", error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving withdrawal: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({
                 status: false,
@@ -83,8 +85,8 @@ class WithdrawalController {
             const result = await withdrawalService.withButtonStatus();
             return res.status(200).json({ status: true, buttonStatus: result });
         } catch (error) {
-            console.error('Error retrieving withdrawal history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            console.error('Error in withdrawal button status:', error.message);
+            logger.error(`Error in withButtonStatus: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -113,8 +115,8 @@ class WithdrawalController {
                 message: 'Withdrawal history retrieved successfully',
             });
         } catch (error) {
-            console.error('Error retrieving withdrawal history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            console.error('Error in listWithdrawalHistory:', error.message);
+            logger.error(`Error in listWithdrawalHistory: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -145,7 +147,7 @@ class WithdrawalController {
             });
         } catch (error) {
             console.error('Error cancelling the withdrawal request:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error cancelling the withdrawal request: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -179,7 +181,7 @@ class WithdrawalController {
             });
         } catch (error) {
             console.error('Error fetching fast withdrawal details:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching fast withdrawal details: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({
                 status: false,
@@ -216,8 +218,8 @@ class WithdrawalController {
                 message: "Last fast withdrawal timestamp retrieved successfully",
             });
         } catch (error) {
-            console.error("Error fetching fast withdrawal details:", error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            console.error("Error fetching fast withdrawal durationTimer:", error.message);
+            logger.error(`Error fetching fast withdrawal durationTimer: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({
                 status: false,
@@ -271,12 +273,30 @@ class WithdrawalController {
             }
         } catch (error) {
             console.error("Error saving fast withdrawal:", error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving fast withdrawal: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({
                 status: false,
                 message: "Something went wrong. Please try again.",
             });
+        }
+    }
+    
+    async getPendingRequestsCount(req, res) {
+        try {
+            const userId = req.user_id;
+    
+            if (!userId) {
+                return res.status(400).json({ status: false, message: "User ID is required" });
+            }
+    
+            const result = await withdrawalService.getPendingRequestsCount(userId);
+            return res.status(200).json({ status: true, pending_requests_count: result });
+        } catch (error) {
+            console.error('Error retrieving pending requests count:', error.message);
+            logger.error(`Error fetching pending requests count: ${error.message}`, { stack: error.stack });
+    
+            return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
     }
 }

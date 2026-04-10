@@ -72,7 +72,7 @@ class BetController {
                 message: 'Betting order list fetched successfully',
             });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching betting order list: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({
                 status: false,

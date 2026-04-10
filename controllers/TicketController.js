@@ -19,12 +19,17 @@ class TicketController {
                 closedCount: result.closedCount,
             });
         } catch (error) {
-            console.error('Error closing ticket by ID:', error.message);
-            logger.error(`Error closing ticket by ID: ${error.message}`, { stack: error.stack });
+            const statusCode = error.statusCode || 500;
 
-            return res.status(500).json({
+            console.error('Error closing ticket by ID:', error.message);
+            
+            if (statusCode === 500) {
+                logger.error(`Error closing ticket by ID: ${error.message}`, { stack: error.stack });
+            }
+        
+            return res.status(statusCode).json({
                 status: false,
-                message: 'Something went wrong while closing the ticket.',
+                message: error.message || 'Something went wrong while closing the ticket.',
             });
         }
     }
@@ -47,7 +52,7 @@ class TicketController {
             });
         } catch (error) {
             console.error('Error fetching ticket history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching ticket history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -83,7 +88,7 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error saving ticket:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving ticket: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -111,7 +116,7 @@ class TicketController {
             });
         } catch (error) {
             console.error('Error fetching ticket history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching ticket history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -148,7 +153,7 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error saving reply:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving ticket reply: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }
@@ -173,7 +178,7 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error fetching ticket data:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching ticket history data: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });
         }

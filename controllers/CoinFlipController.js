@@ -1,6 +1,8 @@
 const { logger } = require('../logger');
 const coinFlipService = require('../services/coinFlipService');
 const liveBetService = require('../services/liveBetService');
+const fs = require('fs');
+
 require('dotenv').config();
 
 class CoinFlipController {
@@ -67,7 +69,7 @@ class CoinFlipController {
             return res.status(200).send(betHistory);
         } catch (error) {
             console.error('Error fetching user bet history:', error.message);
-            logger.error(`Error fetching user bet history: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching coin flip user bet history: ${error.message}`, { stack: error.stack });
 
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -173,7 +175,10 @@ class CoinFlipController {
             const thresholdAmount = await coinFlipService.getThresholdAmount();
             if (thresholdAmount && bet_amount > thresholdAmount) {
                 const userData = await coinFlipService.getUserDetails(user_id);
-                if (userData) {
+                if (userData) 
+                {
+                    // YEH LINE ADD KAREIN
+                    console.log(`Email bhejne ki koshish kar raha hoon... Bet Amount: ${bet_amount}, Threshold: ${thresholdAmount}`);
                     coinFlipService.sendEmail(userData, bet_amount).catch(console.error);
                 }
             }
@@ -234,28 +239,41 @@ class CoinFlipController {
 
     // Give winning to the users who all won
     async createWinner(req, res) { 
+        console.log('createWinner API called');
+    
+        let matchResult = null;
+    
         try {
-            // 🔒 Token check
             const token = req.query.token || req.headers['x-auth-token'];
-
+    
             if (token !== process.env.COINFLIP_SECRET_KEY) {
                 return res.status(403).json({ message: 'Unauthorized request' });
             }
-
-            const matchResult = await coinFlipService.getEligibleMatch();
-        
+    
+            matchResult = await coinFlipService.getEligibleMatch();
+    
             if (!matchResult) {
                 return res.status(200).send({ message: 'No eligible match to process.' });
             }
-        
+    
             await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
-        
+    
             return res.status(200).send('Match result processed and winnings distributed.');
-        
+    
         } catch (error) {
             console.error('Error in createWinner:', error.message);
             logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
+    
             return res.status(500).send({ msg: 'Error occurred', error: error.message });
+    
+        } finally {
+            try {
+                console.log('Ensuring next game creation...');
+                await coinFlipService.createGame();
+            } catch (err) {
+                console.error('Critical: createGame failed:', err.message);
+                logger.error('createGame failed in finally block', { stack: err.stack });
+            }
         }
     }
 
@@ -289,6 +307,29 @@ class CoinFlipController {
                 msg: 'An error occurred',
                 error: error.message,
             });
+        }
+    }
+    
+    //function to get current server time
+    async getServerTime(req, res) {
+        try {
+          // Require inside the function
+          const moment = require('moment-timezone');
+    
+          const serverTime = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+    
+          res.json({
+            success: true,
+            timezone: 'Asia/Kolkata',
+            serverTime
+          });
+        } catch (error) {
+          console.error('Error fetching server time:', error);
+          logger.error(`Error fetching coin flip server time: ${error.message}`, { stack: error.stack });
+          res.status(500).json({
+            success: false,
+            message: 'Error fetching server time'
+          });
         }
     }
 }

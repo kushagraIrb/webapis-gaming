@@ -42,7 +42,7 @@ class closeBetController {
             });
         } catch (error) {
             console.error('Error fetching close bet matches:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching close bet matches: ${error.message}`, { stack: error.stack });
 
             return res.status(500).send({
                 status: false,

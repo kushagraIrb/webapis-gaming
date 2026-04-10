@@ -4,16 +4,18 @@ class walletModel {
     // Fetch wallet history for a user with pagination
     static async getWalletHistory(userId, start, perPage) {
         let query = `
-        SELECT t.transaction_id, t.d_w_id, t.bet_id, t.win_id, t.coin_match_id, 
-               t.credit_amount, t.debit_amount, t.total_amount, t.type, t.t_status, 
-               t.transaction_date, t.cancel_charge, t.charge_amt_cut, 
-               m.match_title, m.match_date, m.match_time, m.win_ratio, 
-               b.bet_date
-        FROM tbl_transaction_history AS t
-        LEFT JOIN tbl_upcoming_match AS m ON t.match_id = m.id
-        LEFT JOIN tbl_bet AS b ON t.bet_id = b.bet_id
-        WHERE t.user_id = ?
-        ORDER BY t.trans_id DESC
+            SELECT t.transaction_id, t.d_w_id, t.bet_id, t.win_id, t.coin_match_id, 
+                   t.credit_amount, t.debit_amount, t.total_amount, t.type, t.t_status, 
+                   t.transaction_date, t.cancel_charge, t.charge_amt_cut, 
+                   m.match_title, m.match_date, m.match_time, m.win_ratio, 
+                   b.bet_date,
+                   wd.reasons AS reason
+            FROM tbl_transaction_history AS t
+            LEFT JOIN tbl_upcoming_match AS m ON t.match_id = m.id
+            LEFT JOIN tbl_bet AS b ON t.bet_id = b.bet_id
+            LEFT JOIN tbl_with_dep AS wd ON t.d_w_id = wd.tid
+            WHERE t.user_id = ?
+            ORDER BY t.trans_id DESC
         `;
     
         // Add pagination if required
@@ -31,7 +33,7 @@ class walletModel {
             match_time: row.match_time ? JSON.parse(row.match_time) : [],
             win_ratio: row.win_ratio ? JSON.parse(row.win_ratio) : []
         }));
-    }    
+    }
 
     // Count total wallet history records for a user
     static async countWalletHistory(userId) {

@@ -7,7 +7,7 @@ class NotificationController {
             const notifications = await notificationService.getNotification();
             return res.status(200).json({ data: notifications });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching notification list: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ message: error.message });
         }
@@ -24,7 +24,7 @@ class NotificationController {
             const notifications = await notificationService.getNotificationUserCount(user_id);
             return res.status(200).json({ data: notifications });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching notification user count: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ message: error.message });
         }
@@ -40,7 +40,7 @@ class NotificationController {
             const updatedCount = await notificationService.updateNotificationStatus(user_id);
             return res.status(200).json({ message: 'Notification status updated', data: updatedCount });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching notification status: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ message: error.message });
         }
@@ -60,7 +60,7 @@ class NotificationController {
                 filePath: filePath 
             });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching notification images: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ message: error.message });
         }

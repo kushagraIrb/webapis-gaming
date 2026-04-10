@@ -16,52 +16,168 @@ class UserService {
 
     // Fetch user details based on jwt token
     static async fetchUserDetailsByJwtToken(userId) {
-        try {
-            const userDetails = await userModel.fetchUserDetailsByJwtToken(userId);
-            if (!userDetails) {
-                throw new Error('User not found');
-            }
-            return userDetails;
-        } catch (error) {
-            throw new Error('Error fetching user details');
+        const userDetails = await userModel.fetchUserDetailsByJwtToken(userId);
+    
+        // ❌ User not found → 404
+        if (!userDetails) {
+            const err = new Error('User not found');
+            err.statusCode = 404;
+            throw err;
         }
+    
+        return userDetails;
     }
-
-    static async processSendOtp(email, phone) {
+    
+    static async processSendOtp(email, phone, name) {
         const existingEmail = await userModel.findUserByEmail(email);
         const existingPhone = await userModel.findUserByPhone(phone);
     
+        // ❌ Email already exists → 409 Conflict
         if (existingEmail && existingEmail.length > 0) {
-            throw new Error('Email already exists.');
+            const err = new Error('Email already exists.');
+            err.statusCode = 409;
+            throw err;
         }
+    
+        // ❌ Phone already exists → 409 Conflict
         if (existingPhone && existingPhone.length > 0) {
-            throw new Error('Phone number already exists.');
+            const err = new Error('Phone number already exists.');
+            err.statusCode = 409;
+            throw err;
         }
-
+    
         const otp = otpService.generateOtp();
-
-        const mailSubject = 'Account Verification';
+    
+        const mailSubject = 'GamingHelper: Your Email Verification Code';
+    
         const content = `
-            <p>
-                Dear User, You have requested to register on Gaming Helper Online as a Registered User. 
-                The confidential OTP to verify your email id is ${otp}. 
-                In case you have not requested the OTP, please ignore this email. 
-                The OTP is valid for 15 seconds only.<br><br>
-                Regards, Gaming Helper Online Administrator <br>
-                <b>Note:</b> This is a system-generated message, please do not reply to it.<br><br>
-                <b>Notice:</b> The information contained in this e-mail message and/or attachments may contain confidential or privileged information. 
-                If you are not the intended recipient, any dissemination, use, review, distribution, or copying is strictly prohibited. 
-                If received in error, please notify us immediately and delete this message permanently.<br><br>
-                Thank you.
-            </p>`;
-
+            <div style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 30px 0;">
+            
+                <div style="max-width: 480px; margin: auto; background: #ffffff; border-radius: 10px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            
+                    <!-- Logo -->
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <img 
+                            src="https://gaminghelperonline.com/assets/gaminglogo-BXD6Vttg.png" 
+                            alt="GamingHelper Logo" 
+                            style="max-width: 120px; height: auto;" 
+                        />
+                    </div>
+            
+                    <!-- Title -->
+                    <h2 style="text-align: center; color: #2c3e50; margin-bottom: 20px;">
+                        Verify Your Email
+                    </h2>
+            
+                    <!-- Content -->
+                    <p style="color: #333;">Dear ${name || 'User'},</p>
+            
+                    <p style="color: #555;">
+                        Thank you for registering with <b>GamingHelper</b>.
+                    </p>
+            
+                    <p style="color: #555;">
+                        Your One-Time Password (OTP) to verify your email is:
+                    </p>
+            
+                    <!-- OTP -->
+                    <div style="text-align: center; margin: 20px 0;">
+                        <span style="
+                            display: inline-block;
+                            font-size: 28px;
+                            letter-spacing: 8px;
+                            font-weight: bold;
+                            color: #000;
+                            background: #f1f3f5;
+                            padding: 10px 20px;
+                            border-radius: 6px;
+                        ">
+                            ${otp}
+                        </span>
+                    </div>
+            
+                    <p style="text-align: center; color: #777;">
+                        This OTP is valid for <b>5 minutes</b>.
+                    </p>
+            
+                    <p style="color: #777;">
+                        If you did not request this, you can safely ignore this email.
+                    </p>
+            
+                    <hr style="margin: 25px 0; border: none; border-top: 1px solid #eee;" />
+            
+                    <!-- Footer -->
+                    <div style="text-align: center; font-size: 13px; color: #888;">
+                        <p style="margin: 5px 0;">Regards,</p>
+                        <p style="margin: 5px 0;"><b>GamingHelper Team</b></p>
+            
+                        <p style="margin: 8px 0;">
+                            🌐 <a href="https://gaminghelperonline.com" style="color: #1a73e8; text-decoration: none;">
+                                Visit our website
+                            </a>
+                        </p>
+            
+                        <p style="margin-top: 10px; font-size: 11px; color: #aaa;">
+                            © ${new Date().getFullYear()} GamingHelper. All rights reserved.
+                        </p>
+                    </div>
+            
+                </div>
+            
+            </div>
+        `;
+    
+        // Send Email
         await otpService.sendOtpEmail(email, mailSubject, content);
-
-        // Save OTP in the database
-        const insertedId = await userModel.saveOtp(email, phone, otp);
-
+    
+        // Save OTP
+        await userModel.saveOtp(email, phone, otp);
+    
         return { msg: 'OTP has been sent successfully!' };
     }
+
+    // static async processSendOtp(email, phone) {
+    //     const existingEmail = await userModel.findUserByEmail(email);
+    //     const existingPhone = await userModel.findUserByPhone(phone);
+
+    //     // ❌ Email already exists → 409 Conflict
+    //     if (existingEmail && existingEmail.length > 0) {
+    //         const err = new Error('Email already exists.');
+    //         err.statusCode = 409;
+    //         throw err;
+    //     }
+    
+    //     // ❌ Phone already exists → 409 Conflict
+    //     if (existingPhone && existingPhone.length > 0) {
+    //         const err = new Error('Phone number already exists.');
+    //         err.statusCode = 409;
+    //         throw err;
+    //     }
+
+    //     const otp = otpService.generateOtp();
+
+    //     const mailSubject = 'Account Verification';
+    //     const content = `
+    //         <p>
+    //             Dear User, You have requested to register on Gaming Helper Online as a Registered User. 
+    //             The confidential OTP to verify your email id is ${otp}. 
+    //             In case you have not requested the OTP, please ignore this email. 
+    //             The OTP is valid for 15 seconds only.<br><br>
+    //             Regards, Gaming Helper Online Administrator <br>
+    //             <b>Note:</b> This is a system-generated message, please do not reply to it.<br><br>
+    //             <b>Notice:</b> The information contained in this e-mail message and/or attachments may contain confidential or privileged information. 
+    //             If you are not the intended recipient, any dissemination, use, review, distribution, or copying is strictly prohibited. 
+    //             If received in error, please notify us immediately and delete this message permanently.<br><br>
+    //             Thank you.
+    //         </p>`;
+
+    //     await otpService.sendOtpEmail(email, mailSubject, content);
+
+    //     // Save OTP in the database
+    //     const insertedId = await userModel.saveOtp(email, phone, otp);
+
+    //     return { msg: 'OTP has been sent successfully!' };
+    // }
 
     static async checkNameExists(firstName, lastName, userId = null) {
         return await userModel.checkUserNameExists(firstName, lastName, userId);
@@ -98,14 +214,24 @@ class UserService {
     }
 
     static async registerUser(userData, ipAddress) {
+
+        // 1. Check if phone number already exists
+        const existingPhone = await userModel.findUserByPhone(userData.phone);
+
+        if (existingPhone && existingPhone.length > 0) {
+            const err = new Error('User already exists with same phone number.');
+            err.statusCode = 409;
+            throw err;
+        }
+
         const hashedPassword = await bcrypt.hash(userData.password, 10);
         const userState = await this.getStateByPincode(userData.pincode) || userData.state;
-    
+
         let referralDetails = await this.getReferralDetails(userData);
-    
+
         // Generate referral code
         const referralCode = this.generateReferralCode();
-    
+
         // Save user to database
         const newUser = await userModel.createUser(
             userData.first_name,
@@ -121,7 +247,7 @@ class UserService {
             referralDetails.adminRefcode,
             ipAddress
         );
-    
+
         const LastUserID = newUser.insertId;
         const fullReferralCode = `${referralCode}${LastUserID}`;
 
@@ -132,7 +258,7 @@ class UserService {
         };
 
         await userModel.updateUser(LastUserID, arrData);
-    
+
         if (referralDetails.isRefer) {
             await this.handleReferralBonuses(LastUserID, referralDetails);
         }
@@ -153,7 +279,7 @@ class UserService {
 
         // Update session token in the database
         await userModel.updateSessionToken(LastUserID, accessToken, refreshToken);
-    
+
         // return { msg: 'The user has been registered successfully!', userDetails: userDetails };
         return { msg: 'The user has been registered successfully!', accessToken, refreshToken };
     }
@@ -163,13 +289,13 @@ class UserService {
         const stateName = await userModel.fetchState(pincode);
         return stateName || null;
     }
-    
+
     // Helper to get referral details
     static async getReferralDetails(userData) {
         let isRefer = userData.is_referral ? 1 : 0;
         let referralAmount = 0, bonusStatus = '', UidR = '0', calculateTotBonus = 0;
         let adminRefcode = null, userRefcode = null, isType = 0;
-    
+
         if (isRefer) {
             const adminRef = await userModel.findCouponByCode(userData.refer_to);
             if (adminRef) {
@@ -181,11 +307,11 @@ class UserService {
             } else {
                 const refBonus = await userModel.getReferalamount();
                 const referUid = await userModel.findUserByReferralCode(userData.refer_to);
-    
+
                 bonusStatus = 'Referral';
                 UidR = referUid ? referUid.id : '0';
                 userRefcode = userData.refer_to;
-    
+
                 if (referUid) {
                     const totalBonus = await CalculateBonusByUID(referUid.id);
                     calculateTotBonus = refBonus.bonus_amount + totalBonus;
@@ -193,21 +319,21 @@ class UserService {
                 }
             }
         }
-    
+
         return { isRefer, referralAmount, bonusStatus, UidR, calculateTotBonus, adminRefcode, userRefcode, isType };
     }
-    
+
     // Helper to generate referral code
     static generateReferralCode() {
         const Yr = new Date().getFullYear();
         const randomString = randomstring.generate({ length: 4, charset: 'numeric' });
         return `GH${Yr}${randomString}`;
     }
-    
+
     // Helper to handle referral bonuses
     static async handleReferralBonuses(LastUserID, details) {
         const { referralAmount, UidR, calculateTotBonus, adminRefcode, bonusStatus, isType } = details;
-    
+
         if (isType) {
             // Admin Referral
             const referralId = await this.insertReferralHistory(referralAmount, LastUserID, LastUserID, adminRefcode);
@@ -216,7 +342,7 @@ class UserService {
             // User Referral
             const referralId = await this.insertReferralHistory(referralAmount, LastUserID, UidR, adminRefcode);
             await this.insertBonusHistory(referralId, UidR, referralAmount, calculateTotBonus, 'Credit', bonusStatus, adminRefcode);
-    
+
             // Self Referral
             const selfReferralId = await this.insertReferralHistory(referralAmount, LastUserID, LastUserID, adminRefcode);
             await this.insertBonusHistory(selfReferralId, LastUserID, referralAmount, referralAmount, 'Credit', bonusStatus, adminRefcode);
@@ -226,33 +352,36 @@ class UserService {
     static async loginUser(req, userData) {
         // Check if the user exists by phone
         const user = await this.validateUser(req, userData);
-    
+
         if (!user) {
-            throw new Error('Incorrect phone number or password!');
+            const err = new Error('Incorrect phone number or password!');
+            err.statusCode = 401;
+            throw err;
         }
-    
-        // Check if the user is verified and active
+        
         if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
-            throw new Error('Your login Id is blocked, please contact the administrator.');
+            const err = new Error('Your login Id is blocked, please contact the administrator.');
+            err.statusCode = 403;
+            throw err;
         }
-    
+
         // Generate a new access token
         const newAccessToken = jwt.sign(
             { id: user.id },
             JWT_SECRET,
             { expiresIn: '30d' } // Short-lived token
         );
-    
+
         // Optionally, regenerate the refresh token
         const newRefreshToken = jwt.sign(
             { id: user.id },
             JWT_SECRET,
             { expiresIn: '30d' } // Long-lived token
         );
-    
+
         // Update session token in the database
         await userModel.updateSessionToken(user.id, newAccessToken, newRefreshToken);
-    
+
         return { msg: 'Login successful!', newAccessToken, newRefreshToken };
     }
 
@@ -278,18 +407,18 @@ class UserService {
         const clientIp4 = clientIp6.replace(/^::ffff:/, '');
 
         const userAgent = req.headers['user-agent'];
-    
-        const logData = {
-            phone: userData.phone,
-            password: userData.password,
-            result: user ? 1 : 0,
-            query: JSON.stringify(loginQuery),
-            ip_address: clientIp4,
-            browser_info: JSON.stringify(userAgent),
-            created_at: new Date()
-        };
-    
-        await userModel.insertinLog(logData);
+
+        // const logData = {
+        //     phone: userData.phone,
+        //     password: userData.password,
+        //     result: user ? 1 : 0,
+        //     query: JSON.stringify(loginQuery),
+        //     ip_address: clientIp4,
+        //     browser_info: JSON.stringify(userAgent),
+        //     created_at: new Date()
+        // };
+
+        // await userModel.insertinLog(logData);
         await userModel.updateUserIpAddress(clientIp4, userData.phone);
 
         return user[0];
@@ -302,38 +431,40 @@ class UserService {
         } catch (error) {
             throw new Error('Error fetching bonus league info');
         }
-    }    
+    }
 
     static async calculateTotalEarnings(userId) {
         try {
-          // Step 1: Get the maximum transaction ID for the user
-          const TotalEarnAmount = await userModel.TotalEarnAmount(userId);
-          return TotalEarnAmount || 0;
+            // Step 1: Get the maximum transaction ID for the user
+            const TotalEarnAmount = await userModel.TotalEarnAmount(userId);
+            return TotalEarnAmount || 0;
         } catch (error) {
-          throw new Error('Error calculating wallet amount');
+            throw new Error('Error calculating wallet amount');
         }
     }
 
     static async calculateReferralEarnings(userId) {
         try {
-          // Step 1: Get the maximum transaction ID for the user
-          const TotalReferralAmount = await userModel.TotalReferralAmount(userId);
-          return TotalReferralAmount || 0;
+            // Step 1: Get the maximum transaction ID for the user
+            const TotalReferralAmount = await userModel.TotalReferralAmount(userId);
+            return TotalReferralAmount || 0;
         } catch (error) {
-          throw new Error('Error calculating wallet amount');
+            throw new Error('Error calculating wallet amount');
         }
     }
 
     static async changeUserPassword(password, userId) {
         try {
             const hashedPassword = await bcrypt.hash(password, 10);
-          
+
             const pwdUpdate = await userModel.changeUserPassword(hashedPassword, userId);
 
             if (pwdUpdate.affectedRows === 0) {
-                throw new Error('Password update failed. User not found.');
+                const err = new Error('Password update failed. User not found.');
+                err.statusCode = 404;
+                throw err;
             }
-            
+
             return { status: 'Password updated successfully' };
         } catch (error) {
             throw new Error('Error updating password: ' + error.message);
@@ -343,11 +474,13 @@ class UserService {
     static async editProfile(userId, profileData) {
         try {
             const profileUpdate = await userModel.updateProfile(userId, profileData);
-    
+
             if (profileUpdate.affectedRows === 0) {
-                throw new Error('Profile update failed. User not found.');
+                const err = new Error('Profile update failed. User not found.');
+                err.statusCode = 404;
+                throw err;
             }
-    
+
             return { status: 'Profile updated successfully' };
         } catch (error) {
             throw new Error('Error updating profile: ' + error.message);
@@ -357,11 +490,13 @@ class UserService {
     static async addAccount(userId, accountData) {
         try {
             const result = await userModel.addAccount(userId, accountData);
-    
+
             if (!result || result.affectedRows === 0) {
-                throw new Error('Account addition failed.');
+                const err = new Error('Account addition failed.');
+                err.statusCode = 500;
+                throw err;
             }
-    
+
             return { status: 'Account information added successfully.' };
         } catch (error) {
             throw new Error('Error updating profile: ' + error.message);
@@ -371,11 +506,11 @@ class UserService {
     static async getAccountData(userId) {
         try {
             const result = await userModel.fetchAccountDetails(userId);
-    
+
             if (!result || result.length === 0) {
                 return null;
             }
-    
+
             return result; // Return the account details
         } catch (error) {
             throw new Error('Error retrieving account details: ' + error.message);
@@ -385,23 +520,26 @@ class UserService {
     static async resetLink(email) {
         try {
             const user = await userModel.findUserByEmail(email);
-    
+
             if (!user || user.length === 0) {
-                // return { resetLink: null }; // Email not found
-                throw new Error('User not found with the provided email and ID.');
+                const err = new Error('User not found with the provided email.');
+                err.statusCode = 404;
+                throw err;
             }
-    
+
             const resetToken = Buffer.from(email).toString('base64');
             const userIdToken = Buffer.from(user[0].id.toString()).toString('base64');
-    
+
             const resetLink = `${BASE_URL}/Verify?token=${resetToken}&vendorid=${userIdToken}`;
             const emailSent = await this.sendResetEmail(user[0].email, user[0].first_name, resetLink);
-    
-            if (emailSent) {
-                return { resetLink };
-            } else {
-                throw new Error('Failed to send reset email.');
+
+            if (!emailSent) {
+                const err = new Error('Failed to send reset email.');
+                err.statusCode = 500;
+                throw err;
             }
+        
+            return { resetLink };
         } catch (error) {
             throw new Error(error.message);
         }
@@ -420,7 +558,7 @@ class UserService {
                     <p>Thanks, <br> The Gaming Helper Online Team</p>
                 </div>
             `;
-    
+
             await sendMail(email, mailSubject, content);
             return true;
         } catch (error) {
@@ -434,20 +572,20 @@ class UserService {
             if (!email) {
                 return { success: false, msg: 'Email is required.' };
             }
-    
+
             const user = await userModel.findUserByEmail(email);
-    
+
             if (!user || user.length === 0) {
                 return { success: false, msg: 'User not found with the provided email.' };
             }
-    
+
             const hashedPassword = await bcrypt.hash(newPassword, 10);
             const result = await userModel.changeUserPassword(hashedPassword, user[0].id);
-    
+
             if (!result || result.affectedRows === 0) {
                 return { success: false, msg: 'Password update failed. Please try again.' };
             }
-    
+
             return { success: true };
         } catch (error) {
             return { success: false, msg: 'Error updating password: ' + error.message };
@@ -458,24 +596,26 @@ class UserService {
         try {
             // Verify the refresh token
             const decoded = jwt.verify(incomingRefreshToken, JWT_SECRET);
-    
+
             // Fetch the user's current refresh token from the database
             const userTokens = await userModel.fetchTokens(decoded.id);
-    
+
             if (!userTokens || userTokens.refresh_token !== incomingRefreshToken) {
-                throw new Error('Invalid refresh token.');
+                const err = new Error('Invalid refresh token.');
+                err.statusCode = 401;
+                throw err;
             }
-    
+
             // Generate a new access token (session_token)
             const newAccessToken = jwt.sign(
                 { id: decoded.id },
                 JWT_SECRET,
                 { expiresIn: '30d' } // Short-lived token
             );
-    
+
             // Update the new access token in the database
             await userModel.regenerateAccessToken(decoded.id, newAccessToken);
-    
+
             // Return the new access token
             return { accessToken: newAccessToken };
         } catch (err) {
@@ -487,11 +627,13 @@ class UserService {
         try {
             // Find and clear the refresh token from the database
             const user = await userModel.findUserByRefreshToken(refreshToken);
-    
+
             if (!user) {
-                throw new Error('Invalid refresh token.');
+                const err = new Error('Invalid user. Please try again!');
+                err.statusCode = 401;
+                throw err;
             }
-    
+
             await userModel.clearRefreshToken(user.id);
         } catch (error) {
             throw new Error('Error while logging out.');

@@ -22,7 +22,7 @@ class DepositController {
             });
         } catch (error) {
             console.error('Error fetching deposit history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching deposit history: ${error.message}`, { stack: error.stack });
             
             return res.status(404).send({
                 status: false,
@@ -53,7 +53,7 @@ class DepositController {
             });
         } catch (error) {
             console.error('Error fetching deposit history:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching deposit history: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({
                 status: false,
@@ -71,7 +71,7 @@ class DepositController {
 
             return res.status(200).send(result);
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error saving deopsit: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({
                 status: false,
@@ -88,11 +88,15 @@ class DepositController {
 
             return res.status(200).send(result);
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error saving deposit: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
                 status: false,
-                message: error.message,
+                message: error.message || 'Something went wrong',
             });
         }
     }

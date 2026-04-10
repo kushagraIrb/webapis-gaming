@@ -20,36 +20,35 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
 
       - name: Add server to known_hosts
-        run: ssh-keyscan -H 103.189.89.203 >> ~/.ssh/known_hosts
+        run: ssh-keyscan -H 82.27.0.172 >> ~/.ssh/known_hosts
 
       - name: Copy files to the server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: 103.189.89.203
+          host: 82.27.0.172
           username: root
           key: ${{ secrets.GamingRewampPVTSSHKey }}
           source: "."
-          target: "/www/wwwroot/nodeproject"
+          target: "/www/wwwroot/gamingdevapinew.gaminghelperonline.com"
 
       - name: Set execute permissions for files
         run: |
-          ssh -i ~/.ssh/id_ed25519 root@103.189.89.203 "chmod -R +x /www/wwwroot/nodeproject"
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "chmod -R 755 /www/wwwroot/gamingdevapinew.gaminghelperonline.com"
 
       - name: Check if npm and pm2 are installed
         run: |
-          ssh -i ~/.ssh/id_ed25519 root@103.189.89.203 "which npm && which pm2"
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "which npm && which pm2"
 
       - name: Rebuild native modules on the server
         run: |
-          ssh -i ~/.ssh/id_ed25519 root@103.189.89.203 "cd /www/wwwroot/nodeproject && npm rebuild bcrypt --build-from-source"
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com && npm rebuild bcrypt --build-from-source"
 
       - name: Install dependencies and restart application
         run: |
-          ssh -i ~/.ssh/id_ed25519 root@103.189.89.203 "
-            cd /www/wwwroot/nodeproject && \
-            npm install && \
-            if pm2 describe GamingRewampDev > /dev/null; then \
-              pm2 restart GamingRewampDev; \
-            else \
-              pm2 start app.js --name GamingRewampDev; \
-            fi"
+          ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "
+            cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com && \
+            npm install --production && \
+            pm2 delete gamingDev || true && \
+            pm2 start app.js --name gamingDev && \
+            pm2 save
+          "

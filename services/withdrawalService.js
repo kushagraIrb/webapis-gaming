@@ -20,6 +20,15 @@ class WithdrawalService {
         try {
             const { userId, withdrawalAmount, walletAmount, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm } = data;
 
+            // 1. Check if current time is allowed
+            const timeCheck = await withdrawalModel.getWithdrawalTime();
+            if (timeCheck.allowed === 0) {
+                return {
+                    status: false,
+                    message: "Withdrawals are allowed only during specific time periods. Please try again later.",
+                };
+            }
+
             const twentyFourHoursAgo = new Date();
             twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
 
@@ -56,8 +65,14 @@ class WithdrawalService {
             }
 
             const halfLastDepositAmount = parseFloat(lastDepositAmount) * 0.5;
+
+            let bypassCondition = false;
+
+            if (lastDeposit?.trans_id) {
+                bypassCondition = await transactionHistoryModel.checkAdminTransferBypass(userId, lastDeposit.trans_id);
+            }
             
-            if (adjustedDebitAmount < halfLastDepositAmount) {
+            if (!bypassCondition && adjustedDebitAmount < halfLastDepositAmount) {
                 return {
                     status: false,
                     message: "Use at least 70% of your deposit amount!",
@@ -104,13 +119,13 @@ class WithdrawalService {
         try {
             const withdrawalData = await withdrawalModel.getWithdrawals(userId, perPage, page);
             const totalCount = await withdrawalModel.getWithdrawalCount(userId);
-        
+
             return { withdrawalData, totalCount };
         } catch (error) {
             console.error('Error in withdrawal service:', error.message);
             throw error;
         }
-    }     
+    }
 
     static async cancelWithdrawalRequest(userId, withdrawalId) {
         try {
@@ -123,7 +138,7 @@ class WithdrawalService {
 
             // Proceed to cancel the withdrawal
             const updated = await withdrawalModel.updateWithdrawalStatus(withdrawalId, userId, {
-                status: '2', 
+                status: '2',
                 cancelBy: 'By User'
             });
 
@@ -143,12 +158,12 @@ class WithdrawalService {
         try {
             const fastWithdrawalDetails = await withdrawalModel.fetchFastWithdrawalDetails();
             return fastWithdrawalDetails;
-          } catch (error) {
+        } catch (error) {
             console.error('Error in service: ', error.message);
             throw error;
-          }
+        }
     }
-      
+
     // Format amount in Indian currency
     static formatIndianCurrency(amount) {
         // Ensure the amount is treated as a float and fixed to 2 decimal places
@@ -173,7 +188,7 @@ class WithdrawalService {
         // Combine the formatted integer part with the decimal part
         return `${formattedAmount}.${decimalPart}`;
     }
-    
+
     // Fetch the count of slots
     static async fetchSlotCount(duration) {
         try {
@@ -224,7 +239,7 @@ class WithdrawalService {
 
             // Check deposit and betting conditions
             const lastDeposit = await transactionHistoryModel.getLastDeposit(userId);
-            
+
             let lastDepositAmount = 0;
             let adjustedDebitAmount = 0;
 
@@ -237,7 +252,7 @@ class WithdrawalService {
             }
 
             const halfLastDepositAmount = parseFloat(lastDepositAmount) * 0.5;
-            
+
             // if (adjustedDebitAmount < halfLastDepositAmount) {
             //     return {
             //         status: false,
@@ -257,7 +272,7 @@ class WithdrawalService {
 
             // Email admin, notifying them about the fast withdrawal request
             const userDetails = await userModel.fetchUserDetailsByJwtToken(userId);
-            const totalAmtToDepositByAdmin = withdrawalAmount - (withdrawalAmount * chargePercent/100);
+            const totalAmtToDepositByAdmin = withdrawalAmount - (withdrawalAmount * chargePercent / 100);
 
             const mailSubject = 'New Fast Withdrawal Request';
             const content = `
@@ -283,6 +298,16 @@ class WithdrawalService {
             };
         } catch (error) {
             console.error("Error in withdrawal service:", error.message);
+            throw error;
+        }
+    }
+
+    static async getPendingRequestsCount(userId) {
+        try {
+            const pendingRequestsCount = await withdrawalModel.fetchPendingRequestsCount(userId);
+            return pendingRequestsCount;
+        } catch (error) {
+            console.error('Error in pending requests service:', error.message);
             throw error;
         }
     }

@@ -8,7 +8,9 @@ class TicketService {
             const ticket = await ticketModel.getTicketById(ticketId);
 
             if (!ticket || !ticket.token_no) {
-                throw new Error('Ticket not found or missing token number.');
+                const err = new Error('Ticket not found or missing token number.');
+                err.statusCode = 404;
+                throw err;
             }
 
             const closedCount = await ticketModel.closeTicketsByTokenNos([ticket.token_no]);
@@ -20,7 +22,7 @@ class TicketService {
         }
     }
 
-  // Fetch ticket types
+    // Fetch ticket types
     static async getTicketTypes() {
         try {
             return await ticketModel.getTicketTypes();

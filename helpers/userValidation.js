@@ -10,7 +10,7 @@ exports.signUpValidation = [
     // check('last_name','Last name is required').not().isEmpty(),
     check('phone','Phone is required').not().isEmpty(),
     check('email','Email is required').not().isEmpty(),
-    check('email','Please enter a valid email').isEmail().normalizeEmail({ gmail_remove_dots:true }),
+    check('email','Please enter a valid email').isEmail().normalizeEmail({ gmail_remove_dots:false }),
     check('pincode','Pincode is required').not().isEmpty(),
     check('password','Password must be atleast 6 characters').isLength({ min:6 }),
     check('is_eighteen','18 checkbox is required').not().isEmpty(),

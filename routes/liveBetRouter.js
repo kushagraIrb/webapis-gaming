@@ -13,6 +13,6 @@ router.get('/', liveBetController.liveBet);
 router.post('/save', liveBetController.saveBet);
 router.post('/cancel', liveBetController.cancelBet);
 router.get('/extra-time-list', liveBetController.extraTimeList);
-router.get('/:encrypted_id', liveBetController.getMatchDetails);
+router.get('/:encrypted_id', liveBetController.getFullMatchDetails);
 
 module.exports = router;

@@ -9,7 +9,7 @@ class MaintenanceController {
             return res.status(200).send( statusData );
         } catch (error) {
             console.error('Error fetching website status:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching website status: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }

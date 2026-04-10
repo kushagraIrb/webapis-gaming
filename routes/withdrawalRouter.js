@@ -28,4 +28,6 @@ router.get('/get-durationTimer', withdrawalController.getDurationTimer);
 router.post('/save-fast-request', withdrawalController.saveFastWithdrawal);
 /******** End Fast withdrawal ********/
 
+router.get('/get-pending-requests-count', withdrawalController.getPendingRequestsCount);
+
 module.exports = router;

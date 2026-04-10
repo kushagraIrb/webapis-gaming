@@ -3,29 +3,34 @@ const { validationResult } = require('express-validator');
 const userService = require('../services/userService');
 const liveBetService = require('../services/liveBetService');
 const requestIp = require('request-ip');
+const userModel = require('../models/userModel');
 
 class UserController {
     // Fetch user details based on jwt token
     async fetchUserDetailsByJwtToken(req, res) {
         try {
             const user_id = req.user_id;
+    
             if (!user_id) {
                 return res.status(400).json({ msg: 'User ID not found in token' });
             }
     
             const userDetails = await userService.fetchUserDetailsByJwtToken(user_id);
     
-            if (!userDetails) {
-                return res.status(404).json({ msg: 'User not found' });
+            return res.status(200).json(userDetails);
+    
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+    
+            if (statusCode === 500) {
+                logger.error(`Error fetching user details by JWT token: ${error.message}`, { stack: error.stack });
             }
     
-            return res.status(200).json(userDetails);
-        } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).json({ msg: error.message });
+            return res.status(statusCode).json({
+                msg: error.message || 'Something went wrong'
+            });
         }
-    }    
+    }
 
     // Send OTP Method
     async sendOtp(req, res) {
@@ -36,15 +41,20 @@ class UserController {
                 return res.status(400).json({ errors: errors.array() });
             }
 
-            const { email, phone } = req.body;
+            const { email, phone, name } = req.body;
 
-            const response = await userService.processSendOtp(email, phone);
+            const response = await userService.processSendOtp(email, phone, name);
             return res.status(200).send(response);
         } catch (error) {
-            console.error('Error sending OTP:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ msg: 'An error occurred', error: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error sending OTP: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                msg: error.message || 'An error occurred'
+            });
         }
     }
 
@@ -61,7 +71,7 @@ class UserController {
             return res.status(200).send({ state_name: state });
         } catch (error) {
             console.error('Error fetching state:', error.message);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error fetching user state: ${error.message}`, { stack: error.stack });
             
             return res.status(500).send({ msg: 'An error occurred', error: error.message });
         }
@@ -165,40 +175,93 @@ class UserController {
             // Send response back to the client
             return res.status(200).send({ msg, accessToken });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ msg: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error in registering new user: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                msg: error.message || 'Something went wrong'
+            });
         }
     }
 
     // Login Method
     async login(req, res) {
+        let apiResponseMsg = '';
+        let result = 0;
+    
+        const phone = req.body.phone || null;
+        const password = req.body.password || null;
+    
+        // Prepare login query once (if phone exists)
+        const loginQuery = phone ? userModel.getLoginQuery(phone) : null;
+    
+        // Common log payload
+        const baseLog = {
+            phone,
+            password,
+            query: loginQuery ? JSON.stringify(loginQuery) : null,
+            ip_address: requestIp.getClientIp(req)?.replace(/^::ffff:/, ''),
+            browser_info: req.headers['user-agent']
+        };
+    
         try {
             const errors = validationResult(req);
     
+            // ❌ Validation error
             if (!errors.isEmpty()) {
+                apiResponseMsg = JSON.stringify(errors.array());
+    
+                await userModel.insertinLog({
+                    ...baseLog,
+                    result: 0,
+                    api_response: apiResponseMsg
+                });
+    
                 return res.status(400).json({ errors: errors.array() });
             }
     
-            // Call the login service
-            const { msg, newAccessToken, newRefreshToken } = await userService.loginUser(req, req.body);
+            // ✅ Service login
+            const { msg, newAccessToken, newRefreshToken } =
+                await userService.loginUser(req, req.body);
     
-            // Set refresh token in an HTTP-only cookie
+            apiResponseMsg = msg;
+            result = 1;
+    
             res.cookie('refreshToken', newRefreshToken, {
-                // httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Strict',
-                maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+                maxAge: 30 * 24 * 60 * 60 * 1000
             });
     
-            // Send response back to the client
+            // ✅ Success log
+            await userModel.insertinLog({
+                ...baseLog,
+                result,
+                api_response: apiResponseMsg
+            });
+    
             return res.status(200).send({ msg, newAccessToken });
+    
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ msg: error.message });
+            const statusCode = error.statusCode || 500;
+            apiResponseMsg = error.message || 'Login failed';
+        
+            await userModel.insertinLog({
+                ...baseLog,
+                result: 0,
+                api_response: apiResponseMsg
+            });
+        
+            if (statusCode === 500) {
+                logger.error(`Login error: ${error.message}`, { stack: error.stack });
+            }
+        
+            return res.status(statusCode).send({ msg: apiResponseMsg });
         }
-    }    
+    }
 
     async changePassword(req, res) {
         try {
@@ -215,37 +278,18 @@ class UserController {
 
             return res.status(200).send({ msg: 'Password updated successfully', response });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ msg: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error changing pwd: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                msg: error.message || 'Something went wrong'
+            });
         }
     }
-
-    // async userDashboard(req, res) {
-    //     try {
-    //         const user_id  = req.user_id;
-
-    //         const walletAmount = parseFloat(await liveBetService.calculateWalletAmount(user_id));
-    //         const bonusAmount = parseFloat(await liveBetService.calculateBonus(user_id));
-    //         const bonusLeagueInfo = await userService.getBonusLeagueInfo(user_id);
-    //         const totalEarnings = parseFloat(await userService.calculateTotalEarnings(user_id));
-
-    //         const referralEarnings = parseFloat(await userService.calculateReferralEarnings(user_id));
-
-    //         return res.status(200).send({
-    //             walletAmount,
-    //             bonusAmount,
-    //             bonusLeagueInfo,
-    //             totalEarnings,
-    //             referralEarnings
-    //         });
-    //     } catch (error) {
-    //         logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-    //         return res.status(500).send({ msg: error.message });
-    //     }
-    // }
-
+    
     async editProfile(req, res) {
         try {
             const errors = validationResult(req);
@@ -271,9 +315,15 @@ class UserController {
     
             return res.status(200).send({message: 'Profile updated successfully'});
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ message: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error editing profile: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                message: error.message || 'Something went wrong'
+            });
         }
     }
 
@@ -304,9 +354,15 @@ class UserController {
     
             return res.status(200).send(response);
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ message: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error in addAccount: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                message: error.message || 'Something went wrong'
+            });
         }
     }
 
@@ -331,7 +387,7 @@ class UserController {
             });
         } catch (error) {
             console.error(error);
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error in getAccount: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: "Server Error: " + error.message });
         }
@@ -349,9 +405,15 @@ class UserController {
                 res.status(400).json({ msg: 'Email does not exist in the system.' });
             }
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ msg: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error in resetLink: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                msg: error.message || 'Something went wrong'
+            });
         }
     }
 
@@ -375,7 +437,7 @@ class UserController {
                 return res.status(400).json({ msg: updateResult.msg });
             }
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
+            logger.error(`Error in forgotPassword: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ msg: 'Internal server error.', error: error.message });
         }
@@ -393,9 +455,15 @@ class UserController {
 
             return res.status(200).send({ msg: 'Access Token fetched successfully.', response });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({ msg: error.message });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error in regenerateAccessToken: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).send({
+                msg: error.message || 'Something went wrong'
+            });
         }
     }
 
@@ -420,9 +488,15 @@ class UserController {
     
             return res.status(200).json({ message: 'Logged out successfully.' });
         } catch (error) {
-            logger.error(`Error fetching about us data: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).json({ message: 'An error occurred while logging out.' });
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error in logout: ${error.message}`, { stack: error.stack });
+            }
+    
+            return res.status(statusCode).json({
+                message: error.message || 'Something went wrong'
+            });
         }
     }
 }

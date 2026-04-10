@@ -23,6 +23,15 @@ if (cluster.isMaster) {
 
     // Run the coin flip cron job only in the master process
     require('./helpers/coinFlipCron.js');
+    
+    // Cleanup deposit uploads cron
+    require('./helpers/cleanDepositUploads.js');
+    
+    // Cleanup deposit_log uploads cron
+    require('./helpers/cleanDepositLogUploads.js');
+
+    // Cleanup ticket uploads cron
+    require('./helpers/cleanTicketUploads.js');
 
     // Run log cleanup every 24 hours
     setInterval(() => {
@@ -59,6 +68,16 @@ if (cluster.isMaster) {
         logger.info(`Request received: ${req.method} ${req.url}`);
         next();
     });
+    
+    // Static uploads
+    // app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+    
+    
+    app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+        fallthrough: true
+    }));
+    
+    
 
     // IP access middleware and routes
     app.use((req, res, next) => {
@@ -74,9 +93,6 @@ if (cluster.isMaster) {
     // IP access check endpoint
     app.get('/api/check-ip', checkIPAccessStatus);
 
-    // Static uploads
-    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
     // Handle 404s
     app.use((req, res, next) => {
         const error = new Error(`Not Found - ${req.originalUrl}`);
@@ -86,11 +102,23 @@ if (cluster.isMaster) {
     });
 
     // Global error handler
+    // app.use((err, req, res, next) => {
+    //     logger.error(`Error: ${err.message}`, { stack: err.stack });
+    //     res.status(500).json({ msg: 'An internal server error occurred' });
+    // });
+    
+    // Global Error handler
     app.use((err, req, res, next) => {
         logger.error(`Error: ${err.message}`, { stack: err.stack });
-        res.status(500).json({ msg: 'An internal server error occurred' });
+    
+        const statusCode = res.statusCode !== 200 ? res.statusCode : 500;
+    
+        res.status(statusCode).json({
+            msg: err.message || 'Internal Server Error'
+        }); 
     });
 
+    
     // Uncaught exception handler
     process.on('uncaughtException', (err) => {
         logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });

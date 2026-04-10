@@ -22,6 +22,8 @@ const routes = [
     { path: '/api/limbo', router: require('../routes/limboRouter') },
     { path: '/api/home-slider', router: require('../routes/homeSliderRouter') },
     { path: '/api/user-dashboard', router: require('../routes/dashboardRoutes') },
+    { path: '/api/with-proof', router: require('../routes/withdrawalProofRouter') },
+    { path: '/api/match-id', router: require('../routes/matchIdRouter.js') },
 ];
 
 module.exports = (app) => {
