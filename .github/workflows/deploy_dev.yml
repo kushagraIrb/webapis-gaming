@@ -40,6 +40,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "
             export NVM_DIR='/www/server/nvm' && \
             source \$NVM_DIR/nvm.sh && \
+            nvm use --delete-prefix v24.13.0 --silent && \
             which npm && which pm2
           "
 
@@ -48,6 +49,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "
             export NVM_DIR='/www/server/nvm' && \
             source \$NVM_DIR/nvm.sh && \
+            nvm use --delete-prefix v24.13.0 --silent && \
             cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com && \
             npm rebuild bcrypt --build-from-source
           "
@@ -57,6 +59,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 "
             export NVM_DIR='/www/server/nvm' && \
             source \$NVM_DIR/nvm.sh && \
+            nvm use --delete-prefix v24.13.0 --silent && \
             cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com && \
             npm install --production && \
             pm2 delete gamingDev || true && \
