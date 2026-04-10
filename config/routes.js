@@ -1,4 +1,3 @@
-// Import all routers in one array for easy scalability
 const routes = [
     { path: '/api/users', router: require('../routes/userRouter') },
     { path: '/api/wallet', router: require('../routes/walletRouter') },
