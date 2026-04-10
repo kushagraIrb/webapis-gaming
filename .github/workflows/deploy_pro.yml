@@ -1,9 +1,11 @@
-name: Deploy to Development Server
+name: Deploy to Production Server
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
-      - development
+      - master
 
 jobs:
   deploy:
@@ -34,12 +36,12 @@ jobs:
             --exclude='info/' \
             --exclude='errors/' \
             -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
-            ./ root@82.27.0.172:/www/wwwroot/gamingdevapinew.gaminghelperonline.com/
+            ./ root@82.27.0.172:/www/wwwroot/ganingnewbackend.development-review.net/
 
       - name: Set execute permissions for files
         run: |
           ssh -i ~/.ssh/id_ed25519 root@82.27.0.172 \
-            "chmod -R 755 /www/wwwroot/gamingdevapinew.gaminghelperonline.com"
+            "chmod -R 755 /www/wwwroot/ganingnewbackend.development-review.net"
 
       - name: Install dependencies and rebuild native modules
         run: |
@@ -49,7 +51,7 @@ jobs:
             source $NVM_DIR/nvm.sh
             nvm use default --silent
 
-            cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com
+            cd /www/wwwroot/ganingnewbackend.development-review.net
 
             echo ">>> Node: $(node -v), NPM: $(npm -v)"
             echo ">>> Running npm install..."
@@ -69,13 +71,13 @@ jobs:
             source $NVM_DIR/nvm.sh
             nvm use default --silent
 
-            cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com
+            cd /www/wwwroot/ganingnewbackend.development-review.net
 
             echo ">>> Restarting PM2 process..."
-            if pm2 describe gamingDev > /dev/null 2>&1; then
-              pm2 restart gamingDev
+            if pm2 describe gamingLive > /dev/null 2>&1; then
+              pm2 restart gamingLive
             else
-              pm2 start app.js --name gamingDev
+              pm2 start app.js --name gamingLive
             fi
 
             pm2 save
