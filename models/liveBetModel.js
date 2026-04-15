@@ -683,12 +683,26 @@ class LiveBetModel {
     
         return rows.length > 0;
     }
+
+    static async getProcessingBet(user_id, match_id) {
+        const [rows] = await db.promise().query(
+            `SELECT bet_id 
+            FROM tbl_bet 
+            WHERE user_id = ? 
+            AND match_id = ? 
+            AND processing_flag = 1
+            LIMIT 1`,
+            [user_id, match_id]
+        );
+
+        return rows[0] || null;
+    }
     
     static async insertBet(connection, data) {
         const [result] = await connection.query(
             `INSERT INTO tbl_bet 
-            (user_id, match_id, team_id, toss_id, amount, bonus_amount, wallet_amount, bet_date) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            (user_id, match_id, team_id, toss_id, amount, bonus_amount, wallet_amount, bet_date, processing_flag) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [
                 data.user_id,
                 data.match_id,
@@ -805,6 +819,24 @@ class LiveBetModel {
                 data.walletUsed,
                 data.istTime
             ]
+        );
+    }
+
+    static async markBetCompleted(connection, betId) {
+        await connection.query(
+            `UPDATE tbl_bet 
+            SET processing_flag = 0 
+            WHERE bet_id = ?`,
+            [betId]
+        );
+    }
+
+    static async markBetFailed(betId) {
+        await db.promise().query(
+            `UPDATE tbl_bet 
+            SET processing_flag = 0 
+            WHERE bet_id = ?`,
+            [betId]
         );
     }
 }

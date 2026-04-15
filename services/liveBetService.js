@@ -778,53 +778,97 @@ class LiveBetService {
         };
     }
     
+    // static async preChecks(user_id, match_id) {
+    //     const [
+    //         betStatus,
+    //         winnerAnnounced,
+    //         bettingRestricted,
+    //         isCancelled,
+    //         matchStatus
+    //     ] = await Promise.all([
+    //         this.checkBettingStatus(),
+    //         this.checkWinnerAnnounced(match_id),
+    //         this.isUserRestrictedFromBetting(user_id),
+    //         this.isMatchCancelled(match_id),
+    //         this.isMatchOver(match_id)
+    //     ]);
+    
+    //     if (betStatus === '0') {
+    //         return { status: false, message: 'Betting is off' };
+    //     }
+    
+    //     if (winnerAnnounced) {
+    //         return { status: false, message: 'Winner announced' };
+    //     }
+    
+    //     if (bettingRestricted > 0) {
+    //         return { status: false, message: 'Betting restricted' };
+    //     }
+    
+    //     if (!isCancelled) {
+    //         return { status: false, message: 'Match cancelled' };
+    //     }
+    
+    //     if (matchStatus?.isMatchOver) {
+    //         return { status: false, message: 'Match over' };
+    //     }
+    
+    //     return { status: true };
+    // }
+
     static async preChecks(user_id, match_id) {
-        const [
-            betStatus,
-            winnerAnnounced,
-            bettingRestricted,
-            isCancelled,
-            matchStatus
-        ] = await Promise.all([
-            this.checkBettingStatus(),
-            this.checkWinnerAnnounced(match_id),
-            this.isUserRestrictedFromBetting(user_id),
-            this.isMatchCancelled(match_id),
-            this.isMatchOver(match_id)
-        ]);
-    
-        if (betStatus === '0') {
-            return { status: false, message: 'Betting is off' };
-        }
-    
-        if (winnerAnnounced) {
-            return { status: false, message: 'Winner announced' };
-        }
-    
-        if (bettingRestricted > 0) {
-            return { status: false, message: 'Betting restricted' };
-        }
-    
-        if (!isCancelled) {
-            return { status: false, message: 'Match cancelled' };
-        }
-    
-        if (matchStatus?.isMatchOver) {
-            return { status: false, message: 'Match over' };
-        }
-    
-        return { status: true };
-    }
+      const processingBet = await liveBetModel.getProcessingBet(user_id, match_id);
+      if (processingBet) {
+          return { status: false, message: 'Bet in progress. Please wait.' };
+      }
+
+      const [
+          betStatus,
+          winnerAnnounced,
+          bettingRestricted,
+          isCancelled,
+          matchStatus
+      ] = await Promise.all([
+          this.checkBettingStatus(),
+          this.checkWinnerAnnounced(match_id),
+          this.isUserRestrictedFromBetting(user_id),
+          this.isMatchCancelled(match_id),
+          this.isMatchOver(match_id)
+      ]);
+
+      if (betStatus === '0') {
+          return { status: false, message: 'Betting is off' };
+      }
+
+      if (winnerAnnounced) {
+          return { status: false, message: 'Winner announced' };
+      }
+
+      if (bettingRestricted > 0) {
+          return { status: false, message: 'Betting restricted' };
+      }
+
+      if (!isCancelled) {
+          return { status: false, message: 'Match cancelled' };
+      }
+
+      if (matchStatus?.isMatchOver) {
+          return { status: false, message: 'Match over' };
+      }
+
+      return { status: true };
+}
 
     static async placeBetWithTransaction(data) {
       const connection = await db.promise().getConnection();
+      let betId = null;
 
       try {
           await connection.beginTransaction();
 
           const { user_id, match_id, minimum_betamount, team_value, toss_id, bet_amount } = data;
 
-          // 🔒 STEP 1: Lock match row
+          // 🔒 Lock match
           const match = await liveBetModel.getMatchForUpdate(connection, match_id);
           if (!match) throw new Error('Match not found');
 
@@ -835,7 +879,6 @@ class LiveBetService {
               throw new Error('Below minimum bet amount');
           }
 
-          // 🔒 STEP 2: Duplicate check in NORMAL time
           if (!isExtraTime) {
               const alreadyBet = await liveBetModel.checkExistingBetForUpdate(
                   connection, user_id, match_id
@@ -843,21 +886,16 @@ class LiveBetService {
               if (alreadyBet) throw new Error('Bet already placed');
           }
 
-          // 🔒 STEP 3: Lock both balance rows and compute split
-          // Still need to read to calculate the bonus/wallet split for insertBet
-          // BUT now both reads happen under FOR UPDATE locks so they're safe
           const bonusAmount = await liveBetModel.getBonusForUpdate(connection, user_id);
           const walletAmount = await liveBetModel.getWalletForUpdate(connection, user_id);
 
           const totalBalance = walletAmount + bonusAmount;
           if (bet_amount > totalBalance) throw new Error('Insufficient balance');
 
-          // 💰 Calculate split
           let UsedBonus = 0, walletUsed = 0;
 
           if (bonusAmount >= bet_amount) {
               UsedBonus = bet_amount;
-              walletUsed = 0;
           } else {
               UsedBonus = bonusAmount;
               walletUsed = bet_amount - bonusAmount;
@@ -867,30 +905,29 @@ class LiveBetService {
           const remainingBonus = bonusAmount - UsedBonus;
           const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-          // ✅ Insert Bet
-          const betId = await liveBetModel.insertBet(connection, {
+          // ✅ INSERT with processing_flag = 1
+          betId = await liveBetModel.insertBet(connection, {
               user_id, match_id, team_value, toss_id,
               bet_amount, UsedBonus, walletUsed, istTime
           });
 
-          // 🔒 STEP 4: Atomic wallet deduction — INSERT only if balance still matches
-          // Guards against any race that slipped past the FOR UPDATE
+          // 💰 Wallet deduction
           if (walletUsed > 0) {
               await liveBetModel.insertTransactionIfSufficient(connection, {
                   betId, match_id, user_id,
                   walletUsed,
-                  expectedCurrentAmount: walletAmount, // ← must still match what we read
+                  expectedCurrentAmount: walletAmount,
                   remainingWallet,
                   istTime
               });
           }
 
-          // 🔒 STEP 5: Atomic bonus deduction
+          // 💰 Bonus deduction
           if (UsedBonus > 0) {
               await liveBetModel.insertBonusIfSufficient(connection, {
                   user_id, betId, match_id,
                   UsedBonus,
-                  expectedCurrentBonus: bonusAmount, // ← must still match what we read
+                  expectedCurrentBonus: bonusAmount,
                   remainingBonus,
                   istTime
               });
@@ -902,12 +939,23 @@ class LiveBetService {
               bet_amount, UsedBonus, walletUsed, istTime
           });
 
+          // ✅ Mark completed BEFORE commit
+          await liveBetModel.markBetCompleted(connection, betId);
+
           await connection.commit();
+
           return { betId };
 
       } catch (error) {
           await connection.rollback();
+
+          // ❗ Important: clear processing flag if failed
+          if (betId) {
+              await liveBetModel.markBetFailed(betId);
+          }
+
           throw error;
+
       } finally {
           connection.release();
       }
