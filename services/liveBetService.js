@@ -258,64 +258,128 @@ class LiveBetService {
     //     }
     // }
     
+    // static async getFullMatchData(encryptedMatchId, userId) {
+    //     try {
+    //         // Parallel independent queries
+    //         const [match, minBetAmount] = await Promise.all([
+    //             liveBetModel.fetchMatchById(encryptedMatchId),
+    //             liveBetModel.fetchMinBetAmount()
+    //         ]);
+    
+    //         if (!match) throw new Error("Match not found");
+    
+    //         // SINGLE DB CALL
+    //         const stats = await liveBetModel.fetchMatchStats(
+    //             match.id,
+    //             match.team_one_id,
+    //             match.team_two_id
+    //         );
+    
+    //         const totalUsers = stats.totalUsers || 0;
+    //         const teamOneUsers = stats.teamOneUsers || 0;
+    //         const teamTwoUsers = stats.teamTwoUsers || 0;
+    
+    //         // Compute ratios
+    //         const teamOneTossRatio = totalUsers > 0 ? (teamOneUsers / totalUsers) * 100 : 0;
+    //         const teamTwoTossRatio = totalUsers > 0 ? (teamTwoUsers / totalUsers) * 100 : 0;
+    
+    //         return {
+    //             matchDetails: {
+    //                 id: match.id,
+    //                 encrypted_id: match.encrypted_id,
+    
+    //                 team_one_id: match.team_one_id,
+    //                 team_one_name: match.team_one_name,
+    //                 team_one_logo: match.team_one_logo,
+    
+    //                 team_two_id: match.team_two_id,
+    //                 team_two_name: match.team_two_name,
+    //                 team_two_logo: match.team_two_logo,
+    
+    //                 match_name: match.match_name,
+    //                 match_date: match.match_date,
+    //                 match_time: match.match_time,
+    //                 match_title: match.match_title,
+    //                 match_address: match.match_address,
+    
+    //                 win_ratio: match.win_ratio,
+    //                 max_bet: match.max_bet,
+    
+    //                 teamOneTossRatio: teamOneTossRatio.toFixed(2),
+    //                 teamTwoTossRatio: teamTwoTossRatio.toFixed(2),
+    //             },
+    //             minBetAmount
+    //         };
+    
+    //     } catch (error) {
+    //         console.error("Error:", error.message);
+    //         throw new Error("Failed to fetch match data");
+    //     }
+    // }
+
     static async getFullMatchData(encryptedMatchId, userId) {
-        try {
-            // Parallel independent queries
-            const [match, minBetAmount] = await Promise.all([
-                liveBetModel.fetchMatchById(encryptedMatchId),
-                liveBetModel.fetchMinBetAmount()
-            ]);
-    
-            if (!match) throw new Error("Match not found");
-    
-            // SINGLE DB CALL
-            const stats = await liveBetModel.fetchMatchStats(
-                match.id,
-                match.team_one_id,
-                match.team_two_id
-            );
-    
-            const totalUsers = stats.totalUsers || 0;
-            const teamOneUsers = stats.teamOneUsers || 0;
-            const teamTwoUsers = stats.teamTwoUsers || 0;
-    
-            // Compute ratios
-            const teamOneTossRatio = totalUsers > 0 ? (teamOneUsers / totalUsers) * 100 : 0;
-            const teamTwoTossRatio = totalUsers > 0 ? (teamTwoUsers / totalUsers) * 100 : 0;
-    
-            return {
-                matchDetails: {
-                    id: match.id,
-                    encrypted_id: match.encrypted_id,
-    
-                    team_one_id: match.team_one_id,
-                    team_one_name: match.team_one_name,
-                    team_one_logo: match.team_one_logo,
-    
-                    team_two_id: match.team_two_id,
-                    team_two_name: match.team_two_name,
-                    team_two_logo: match.team_two_logo,
-    
-                    match_name: match.match_name,
-                    match_date: match.match_date,
-                    match_time: match.match_time,
-                    match_title: match.match_title,
-                    match_address: match.match_address,
-    
-                    win_ratio: match.win_ratio,
-                    max_bet: match.max_bet,
-    
-                    teamOneTossRatio: teamOneTossRatio.toFixed(2),
-                    teamTwoTossRatio: teamTwoTossRatio.toFixed(2),
-                },
-                minBetAmount
-            };
-    
-        } catch (error) {
-            console.error("Error:", error.message);
-            throw new Error("Failed to fetch match data");
-        }
-    }
+      try {
+          const [match, minBetAmount] = await Promise.all([
+              liveBetModel.fetchMatchById(encryptedMatchId),
+              liveBetModel.fetchMinBetAmount()
+          ]);
+
+          if (!match) throw new Error("Match not found");
+
+          // parallel calls (optimized)
+          const [stats, userBet] = await Promise.all([
+              liveBetModel.fetchMatchStats(
+                  match.id,
+                  match.team_one_id,
+                  match.team_two_id
+              ),
+              liveBetModel.fetchUserBet(match.id, userId)
+          ]);
+
+          const totalUsers = stats.totalUsers || 0;
+          const teamOneUsers = stats.teamOneUsers || 0;
+          const teamTwoUsers = stats.teamTwoUsers || 0;
+
+          const teamOneTossRatio = totalUsers > 0 ? (teamOneUsers / totalUsers) * 100 : 0;
+          const teamTwoTossRatio = totalUsers > 0 ? (teamTwoUsers / totalUsers) * 100 : 0;
+
+          return {
+              matchDetails: {
+                  id: match.id,
+                  encrypted_id: match.encrypted_id,
+
+                  team_one_id: match.team_one_id,
+                  team_one_name: match.team_one_name,
+                  team_one_logo: match.team_one_logo,
+
+                  team_two_id: match.team_two_id,
+                  team_two_name: match.team_two_name,
+                  team_two_logo: match.team_two_logo,
+
+                  match_name: match.match_name,
+                  match_date: match.match_date,
+                  match_time: match.match_time,
+                  match_title: match.match_title,
+                  match_address: match.match_address,
+
+                  win_ratio: match.win_ratio,
+                  max_bet: match.max_bet,
+
+                  teamOneTossRatio: teamOneTossRatio.toFixed(2),
+                  teamTwoTossRatio: teamTwoTossRatio.toFixed(2),
+              },
+
+              minBetAmount,
+              
+              bet_id: userBet ? userBet.bet_id : null,
+              processing_flag: userBet ? userBet.processing_flag : null
+          };
+
+      } catch (error) {
+          console.error("Error:", error.message);
+          throw new Error("Failed to fetch match data");
+      }
+  }
 
     static async getMatchDetails(encryptedMatchId) {
       try {
