@@ -200,15 +200,7 @@ class CoinFlipService {
       throw new Error(`Error checking match status: ${error.message}`);
     }
   }
-
-  static async placeCoinBet(betData) {
-    try {
-      const newCoinBet = await coinFlipModel.saveCoinBet(betData);
-      return newCoinBet;
-    } catch (error) {
-      throw new Error('Error placing the bet');
-    }
-  } */
+*/
 
   // Yahaan ham is function ko change kar rahe hain.
   // Ab ye function sirf ye nahi dekhega ki match shuru ho gaya hai ya nahi,
@@ -267,24 +259,32 @@ class CoinFlipService {
   }
 
   // Original placeCoinBet function
-  static async placeCoinBet(betData) {
-    try {
-      const newCoinBet = await coinFlipModel.saveCoinBet(betData);
-      return newCoinBet;
-    } catch (error) {
-      throw new Error('Error placing the bet');
-    }
-  }
+  // static async placeCoinBet(betData) {
+  //   try {
+  //     const newCoinBet = await coinFlipModel.saveCoinBet(betData);
+  //     return newCoinBet;
+  //   } catch (error) {
+  //     throw new Error('Error placing the bet');
+  //   }
+  // }
 
   // Get Bet by ID and User
-  static async getBetByIdAndUser(user_id, bet_id) {
-    try {
-      const bet = await coinFlipModel.findOne({ user_id, bet_id });
-      return bet;
-    } catch (error) {
-      console.error('Error fetching bet:', error);
-      throw new Error('Error fetching bet');
-    }
+  // static async getBetByIdAndUser(user_id, bet_id) {
+  //   try {
+  //     const bet = await coinFlipModel.findOne({ user_id, bet_id });
+  //     return bet;
+  //   } catch (error) {
+  //     console.error('Error fetching bet:', error);
+  //     throw new Error('Error fetching bet');
+  //   }
+  // }
+
+  static async placeCoinBet(betData, connection) {
+    return await coinFlipModel.saveCoinBet(betData, connection);
+  }
+
+  static async getBetByIdAndUser(user_id, bet_id, connection) {
+      return await coinFlipModel.findOne({ user_id, bet_id }, connection);
   }
 
   static async getThresholdAmount() {
@@ -319,41 +319,56 @@ class CoinFlipService {
     }
   }
 
-  static async insertReport(reportData) {
-    try {
-      const Report = await coinFlipModel.insertReportData(reportData);
-      return Report;
-    } catch (error) {
-      console.error('Error inserting report:', error);
-      throw new Error('Error inserting report');
-    }
+  // static async insertReport(reportData) {
+  //   try {
+  //     const Report = await coinFlipModel.insertReportData(reportData);
+  //     return Report;
+  //   } catch (error) {
+  //     console.error('Error inserting report:', error);
+  //     throw new Error('Error inserting report');
+  //   }
+  // }
+
+  // static async insertBonusHistory(bonusHistoryData) {
+  //   try {
+  //     const newBonusHistory = await coinFlipModel.insertBonusData(bonusHistoryData);
+  //     return newBonusHistory;
+  //   } catch (error) {
+  //     console.error('Error inserting bonus history:', error);
+  //     throw new Error('Error inserting bonus history');
+  //   }
+  // }
+
+  // static async insertTransactionHistory(walletHistory) {
+  //   try {
+  //     // Fetch bonus_league_id before proceeding
+  //     const bonusData = await userModel.getBonusIdByUserId(walletHistory.user_id);
+  //     const bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
+
+  //     // Include bonus_league_id in walletHistory
+  //     walletHistory.bonus_league_id = bonus_league_id;
+
+  //     // Create a new transaction record
+  //     const transactionId = await coinFlipModel.createTransaction(walletHistory);
+  //     return transactionId;
+  //   } catch (error) {
+  //     throw new Error('Error recording transaction history');
+  //   }
+  // }
+
+  static async insertReport(reportData, connection) {
+    return await coinFlipModel.insertReportData(reportData, connection);
   }
 
-  static async insertBonusHistory(bonusHistoryData) {
-    try {
-      const newBonusHistory = await coinFlipModel.insertBonusData(bonusHistoryData);
-      return newBonusHistory;
-    } catch (error) {
-      console.error('Error inserting bonus history:', error);
-      throw new Error('Error inserting bonus history');
-    }
+  static async insertBonusHistory(data, connection) {
+      return await coinFlipModel.insertBonusData(data, connection);
   }
 
-  static async insertTransactionHistory(walletHistory) {
-    try {
-      // Fetch bonus_league_id before proceeding
-      const bonusData = await userModel.getBonusIdByUserId(walletHistory.user_id);
-      const bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
+  static async insertTransactionHistory(data, connection) {
+      const bonusData = await userModel.getBonusIdByUserId(data.user_id);
+      data.bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
 
-      // Include bonus_league_id in walletHistory
-      walletHistory.bonus_league_id = bonus_league_id;
-
-      // Create a new transaction record
-      const transactionId = await coinFlipModel.createTransaction(walletHistory);
-      return transactionId;
-    } catch (error) {
-      throw new Error('Error recording transaction history');
-    }
+      return await coinFlipModel.createTransaction(data, connection);
   }
 
   static async getEligibleMatch_old() {
