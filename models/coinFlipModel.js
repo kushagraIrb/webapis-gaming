@@ -212,55 +212,6 @@ class CoinFlipModel {
         }
     }
 
-    // static async saveCoinBet(betData, connection) {
-    //     try {
-    //         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-    //         const query = `
-    //             INSERT INTO tbl_coin_bet 
-    //             (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date)
-                
-    //             SELECT ?, ?, ?, ?, ?, ?, ?
-    //             FROM tbl_upcoming_match_coinflip
-    //             WHERE id = ?
-    //             AND TIMESTAMPDIFF(SECOND, ?, CONCAT(match_date, ' ', match_time)) >= 3
-    //         `;
-
-    //         const [result] = await connection.query(query, [
-    //             betData.user_id,
-    //             betData.match_id,
-    //             betData.amount,
-    //             betData.bonusAmount,
-    //             betData.walletAmount,
-    //             betData.prediction,
-    //             istTime,
-    //             betData.match_id,
-    //             istTime
-    //         ]);
-
-    //         // 🔴 IMPORTANT CHECK
-    //         if (result.affectedRows === 0) {
-    //             throw new Error('Betting time expired (less than 3 seconds left)');
-    //         }
-
-    //         return { betId: result.insertId };
-
-    //     } catch (error) {
-    //         throw error;
-    //     }
-    // }
-    
-    // static async findOne(queryParams) {
-    //     try {
-    //         const query = `SELECT * FROM tbl_coin_bet WHERE user_id = ? AND bet_id = ?`;
-    //         const [result] = await db.promise().query(query, [queryParams.user_id, queryParams.bet_id]);
-    //         return result[0] || null;
-    //     } catch (error) {
-    //         console.error('Error fetching bet by ID and user:', error);
-    //         throw new Error('Error fetching bet');
-    //     }
-    // }
-
     static async saveCoinBet(betData, connection) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
@@ -293,10 +244,66 @@ class CoinFlipModel {
         return { betId: result.insertId };
     }
 
-    static async findOne(queryParams, connection) {
-        const query = `SELECT * FROM tbl_coin_bet WHERE user_id = ? AND bet_id = ?`;
-        const [rows] = await connection.query(query, [queryParams.user_id, queryParams.bet_id]);
-        return rows[0] || null;
+    // Place a bet and insert the bet data into the tbl_bet table
+    static async saveCoinBet(betData) {
+        try {
+            // Get the current time in IST
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+            // const query = `INSERT INTO tbl_coin_bet (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+            // const [result] = await db.promise().query(query, [
+            //     betData.user_id,
+            //     betData.match_id,
+            //     betData.amount,
+            //     betData.bonusAmount,
+            //     betData.walletAmount,
+            //     betData.prediction,
+            //     istTime
+            // ]);
+
+            const query = `
+                INSERT INTO tbl_coin_bet 
+                (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date)
+
+                SELECT ?, ?, ?, ?, ?, ?, ?
+                FROM tbl_upcoming_match_coinflip
+                WHERE id = ?
+                AND TIMESTAMPDIFF(SECOND, ?, CONCAT(match_date, ' ', match_time)) >= 3
+            `;
+
+            const [result] = await db.promise().query(query, [
+                betData.user_id,
+                betData.match_id,
+                betData.amount,
+                betData.bonusAmount,
+                betData.walletAmount,
+                betData.prediction,
+                istTime,
+                betData.match_id,
+                istTime
+            ]);
+
+            if (result.affectedRows === 0) {
+                throw new Error('Betting closed');
+            }
+            
+            return { betId: result.insertId };  // Return the inserted bet ID along with the bet data
+        } catch (error) {
+            throw new Error('Error placing bet: ' + error.message);
+        }
+    }
+
+    // Find one record by user_id and bet_id
+    static async findOne(queryParams) {
+        try {
+            const query = `SELECT * FROM tbl_coin_bet WHERE user_id = ? AND bet_id = ?`;
+            const [result] = await db.promise().query(query, [queryParams.user_id, queryParams.bet_id]);
+            return result[0] || null;
+        } catch (error) {
+            console.error('Error fetching bet by ID and user:', error);
+            throw new Error('Error fetching bet');
+        }
     }
 
     static async fetchThresholdAmount() {
@@ -312,166 +319,116 @@ class CoinFlipModel {
     }
 
     // Insert Report Data
-    // static async insertReportData(reportData) {
+    static async insertReportData(reportData) {
+        try {
+            // Get the current time in IST
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+            const query = `INSERT INTO tbl_coin_report (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?)`;
+            const [result] = await db.promise().query(query,
+                [
+                    reportData.bet_id,
+                    reportData.user_id,
+                    reportData.bet_amount,
+                    reportData.bet_from_bonus,
+                    reportData.bet_from_wallet,
+                    istTime
+                ]);
+            return { reportId: result.insertId };
+        } catch (error) {
+            console.error('Error inserting report data:', error);
+            throw new Error('Error inserting report data');
+        }
+    }
+
+    // Insert Bonus Data
+    // static async insertBonusData(bonusHistoryData) {
     //     try {
     //         // Get the current time in IST
     //         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-    //         const query = `INSERT INTO tbl_coin_report (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?)`;
-    //         const [result] = await db.promise().query(query,
-    //             [
-    //                 reportData.bet_id,
-    //                 reportData.user_id,
-    //                 reportData.bet_amount,
-    //                 reportData.bet_from_bonus,
-    //                 reportData.bet_from_wallet,
-    //                 istTime
-    //             ]);
-    //         return { reportId: result.insertId };
-    //     } catch (error) {
-    //         console.error('Error inserting report data:', error);
-    //         throw new Error('Error inserting report data');
-    //     }
-    // }
-
-    static async insertReportData(data, connection) {
-        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-        const query = `
-            INSERT INTO tbl_coin_report 
-            (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `;
-
-        await connection.query(query, [
-            data.bet_id,
-            data.user_id,
-            data.bet_amount,
-            data.bet_from_bonus,
-            data.bet_from_wallet,
-            istTime
-        ]);
-    }
-
-    // static async insertBonusData(bonusHistoryData) {
-    //     try {
-    //         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-    //         let query, values;
-
-    //         if (bonusHistoryData.fromElse) {
-    //             query = `
-    //           INSERT INTO tbl_bonus_history 
-    //           (user_id, bet_id, match_id, coin_match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
-    //           VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
-    //         `;
-    //             values = [
-    //                 bonusHistoryData.user_id,
-    //                 bonusHistoryData.bet_id,
-    //                 bonusHistoryData.match_id,
-    //                 bonusHistoryData.match_id,
-    //                 bonusHistoryData.debit_bonus,
-    //                 bonusHistoryData.total_bonus,
-    //                 bonusHistoryData.bonus_type,
-    //                 bonusHistoryData.bonus_status,
-    //                 istTime
-    //             ];
-    //         } else {
-    //             query = `
-    //           INSERT INTO tbl_bonus_history 
-    //           (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
-    //           VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
-    //         `;
-    //             values = [
-    //                 bonusHistoryData.user_id,
-    //                 bonusHistoryData.bet_id,
-    //                 bonusHistoryData.match_id,
-    //                 bonusHistoryData.debit_bonus,
-    //                 bonusHistoryData.total_bonus,
-    //                 bonusHistoryData.bonus_type,
-    //                 bonusHistoryData.bonus_status,
-    //                 istTime
-    //             ];
-    //         }
-
-    //         const [result] = await db.promise().query(query, values);
+    //         const query = `INSERT INTO tbl_bonus_history (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)`;
+    //         const [result] = await db.promise().query(query, [bonusHistoryData.user_id, bonusHistoryData.bet_id, bonusHistoryData.match_id, bonusHistoryData.debit_bonus, bonusHistoryData.total_bonus, bonusHistoryData.bonus_type, bonusHistoryData.bonus_status, istTime]);
     //         return { bonusId: result.insertId };
-
     //     } catch (error) {
     //         console.error('Error inserting bonus data:', error);
     //         throw new Error('Error inserting bonus data');
     //     }
     // }
 
-    // Create a transaction record in the tbl_transaction_history
-    
-    static async insertBonusData(data, connection) {
-        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+    static async insertBonusData(bonusHistoryData) {
+        try {
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `
-            INSERT INTO tbl_bonus_history 
-            (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
-            VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
-        `;
+            let query, values;
 
-        await connection.query(query, [
-            data.user_id,
-            data.bet_id,
-            data.match_id,
-            data.debit_bonus,
-            data.total_bonus,
-            data.bonus_type,
-            data.bonus_status,
-            istTime
-        ]);
+            if (bonusHistoryData.fromElse) {
+                query = `
+              INSERT INTO tbl_bonus_history 
+              (user_id, bet_id, match_id, coin_match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
+              VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+            `;
+                values = [
+                    bonusHistoryData.user_id,
+                    bonusHistoryData.bet_id,
+                    bonusHistoryData.match_id,
+                    bonusHistoryData.match_id,
+                    bonusHistoryData.debit_bonus,
+                    bonusHistoryData.total_bonus,
+                    bonusHistoryData.bonus_type,
+                    bonusHistoryData.bonus_status,
+                    istTime
+                ];
+            } else {
+                query = `
+              INSERT INTO tbl_bonus_history 
+              (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
+              VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+            `;
+                values = [
+                    bonusHistoryData.user_id,
+                    bonusHistoryData.bet_id,
+                    bonusHistoryData.match_id,
+                    bonusHistoryData.debit_bonus,
+                    bonusHistoryData.total_bonus,
+                    bonusHistoryData.bonus_type,
+                    bonusHistoryData.bonus_status,
+                    istTime
+                ];
+            }
+
+            const [result] = await db.promise().query(query, values);
+            return { bonusId: result.insertId };
+
+        } catch (error) {
+            console.error('Error inserting bonus data:', error);
+            throw new Error('Error inserting bonus data');
+        }
     }
-    
-    // static async createTransaction(walletHistory) {
-    //     try {
-    //         // Get the current time in IST
-    //         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-    //         const query = `INSERT INTO tbl_transaction_history (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id, debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id) VALUES (0, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    //         const [result] = await db.promise().query(query, [
-    //             walletHistory.bet_id,
-    //             walletHistory.match_id,
-    //             walletHistory.user_id,
-    //             walletHistory.match_id,
-    //             walletHistory.debit_amount,
-    //             walletHistory.total_amount,
-    //             walletHistory.type,
-    //             walletHistory.t_status,
-    //             istTime,
-    //             walletHistory.bonus_league_id
-    //         ]);
-    //         return { transId: result.insertId };
-    //     } catch (error) {
-    //         throw new Error('Error creating transaction: ' + error.message);
-    //     }
-    // }
+    // Create a transaction record in the tbl_transaction_history
+    static async createTransaction(walletHistory) {
+        try {
+            // Get the current time in IST
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-    static async createTransaction(data, connection) {
-        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-        const query = `
-            INSERT INTO tbl_transaction_history
-            (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id,
-            debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id)
-            VALUES (0, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
-        await connection.query(query, [
-            data.bet_id,
-            data.match_id,
-            data.user_id,
-            data.match_id,
-            data.debit_amount,
-            data.total_amount,
-            data.type,
-            data.t_status,
-            istTime,
-            data.bonus_league_id
-        ]);
+            const query = `INSERT INTO tbl_transaction_history (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id, debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id) VALUES (0, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            const [result] = await db.promise().query(query, [
+                walletHistory.bet_id,
+                walletHistory.match_id,
+                walletHistory.user_id,
+                walletHistory.match_id,
+                walletHistory.debit_amount,
+                walletHistory.total_amount,
+                walletHistory.type,
+                walletHistory.t_status,
+                istTime,
+                walletHistory.bonus_league_id
+            ]);
+            return { transId: result.insertId };
+        } catch (error) {
+            throw new Error('Error creating transaction: ' + error.message);
+        }
     }
 
     static async getEligibleMatch_old() {

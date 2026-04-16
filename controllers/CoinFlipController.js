@@ -75,251 +75,82 @@ class CoinFlipController {
         }
     }
 
-    // async saveCoinBet(req, res) {
-    //     try {
-    //         const user_id = req.user_id;
-    //         if (!user_id) {
-    //             return res.status(401).json({ msg: 'Invalid user.' });
-    //         }
-    
-    //         const { match_id, prediction, minimum_betamount, bet_amount } = req.body;
-    
-    //         // Step 1 & 2: Match status and Betting status
-    //         const [matchStatus, betStatus] = await Promise.all([
-    //             coinFlipService.isMatchOver(user_id, match_id),
-    //             coinFlipService.checkBettingStatus()
-    //         ]);
-
-    //         if (matchStatus.isMatchOver) {
-    //             return res.status(401).json({
-    //                 message: 'Sorry! This match is already over. Money not deducted. Try again.',
-    //             });
-    //         }
-    
-    //         // if (matchStatus.isMatchOver < matchStatus.isWithin60SecAfterBet) {
-    //         //     return res.status(401).json({
-    //         //         message: 'Sorry! This match is already over. Money not deducted. Try again.',
-    //         //     });
-    //         // }
-    
-    //         if (betStatus === '0') {
-    //             return res.status(401).json({ message: 'Betting is currently off.' });
-    //         }
-    
-    //         if (bet_amount < minimum_betamount) {
-    //             return res.status(401).json({ message: 'Bet amount is less than the minimum bet amount!' });
-    //         }
-
-    //         // Step 3: Check if the betting is allowed by the admin or not (At the time of withdrawing the money user has access to toggle the betting rights of the user)
-    //         const bettingRestricted = await liveBetService.isUserRestrictedFromBetting(user_id);
-    //         if (bettingRestricted > 0) {
-    //             // ❌ At least one row has is_bet_allowed = 1
-    //             return res.status(401).json({
-    //                 message: 'Your withdrawal is in progress so betting is currently restricted. Please try again after some time!',
-    //             });
-    //         }
-    
-    //         // Step 4: Wallet & Bonus amount fetch + Bet existence check
-    //         const [walletAmountRaw, bonusAmountRaw, alreadyBetted] = await Promise.all([
-    //             coinFlipService.calculateWalletAmount(user_id),
-    //             coinFlipService.calculateBonus(user_id),
-    //             coinFlipService.checkAlreadyBet(user_id, match_id)
-    //         ]);
-    
-    //         const walletAmount = parseFloat(walletAmountRaw);
-    //         const bonusAmount = parseFloat(bonusAmountRaw);
-    //         const totalBalance = walletAmount + bonusAmount;
-    
-    //         if (bet_amount > totalBalance) {
-    //             return res.status(401).json({ message: 'Your bet amount is greater than your wallet amount!' });
-    //         }
-    
-    //         if (alreadyBetted) {
-    //             return res.status(401).json({ message: 'You have already placed a bet on this match!' });
-    //         }
-    
-    //         // Step 5: Calculate deduction split
-    //         let usedFromBonus = 0, usedFromWallet = 0;
-    //         if (bonusAmount >= bet_amount) {
-    //             usedFromBonus = bet_amount;
-    //         } else {
-    //             usedFromBonus = bonusAmount;
-    //             usedFromWallet = bet_amount - bonusAmount;
-    //         }
-    
-    //         const updatedBonus = bonusAmount - usedFromBonus;
-    //         const updatedWallet = walletAmount - usedFromWallet;
-    
-    //         // Step 6: Save Bet
-    //         const betData = {
-    //             user_id,
-    //             match_id,
-    //             amount: bet_amount,
-    //             bonusAmount,
-    //             walletAmount,
-    //             prediction,
-    //         };
-    //         const bet = await coinFlipService.placeCoinBet(betData);
-    //         const LastBetID = bet.betId;
-    
-    //         if (!LastBetID) {
-    //             return res.status(500).json({ error: 'Failed to place bet.' });
-    //         }
-    
-    //         const existingBet = await coinFlipService.getBetByIdAndUser(user_id, LastBetID);
-    //         if (!existingBet) {
-    //             return res.status(500).json({ error: 'Bet not found after placement.' });
-    //         }
-    
-    //         // Step 7: Check threshold and send email
-    //         const thresholdAmount = await coinFlipService.getThresholdAmount();
-    //         if (thresholdAmount && bet_amount > thresholdAmount) {
-    //             const userData = await coinFlipService.getUserDetails(user_id);
-    //             if (userData) 
-    //             {
-    //                 // YEH LINE ADD KAREIN
-    //                 console.log(`Email bhejne ki koshish kar raha hoon... Bet Amount: ${bet_amount}, Threshold: ${thresholdAmount}`);
-    //                 coinFlipService.sendEmail(userData, bet_amount).catch(console.error);
-    //             }
-    //         }
-    
-    //         // Step 8: Insert report
-    //         const reportData = {
-    //             bet_id: LastBetID,
-    //             user_id,
-    //             bet_amount,
-    //             bet_from_bonus: usedFromBonus,
-    //             bet_from_wallet: usedFromWallet,
-    //         };
-    //         await coinFlipService.insertReport(reportData);
-    
-    //         // Step 9: Insert transaction history
-    //         const insertTasks = [];
-    
-    //         if (usedFromBonus > 0) {
-    //             const bonusHistory = {
-    //                 user_id,
-    //                 bet_id: LastBetID,
-    //                 match_id,
-    //                 debit_bonus: usedFromBonus,
-    //                 total_bonus: updatedBonus,
-    //                 bonus_type: 'Debit',
-    //                 bonus_status: 'Bet',
-    //             };
-    //             insertTasks.push(coinFlipService.insertBonusHistory(bonusHistory));
-    //         }
-    
-    //         if (usedFromWallet > 0) {
-    //             const walletHistory = {
-    //                 bet_id: LastBetID,
-    //                 match_id,
-    //                 user_id,
-    //                 debit_amount: usedFromWallet,
-    //                 total_amount: updatedWallet,
-    //                 type: 'Debit',
-    //                 t_status: 'Bet',
-    //             };
-    //             insertTasks.push(coinFlipService.insertTransactionHistory(walletHistory));
-    //         }
-    
-    //         await Promise.all(insertTasks);
-    
-    //         // Final Response
-    //         return res.status(200).json({
-    //             status: true,
-    //             message: 'Coin Flip bet placed successfully!'
-    //         });
-    
-    //     } catch (error) {
-    //         console.error(error);
-    //         logger.error(`Error in saving coin flip: ${error.message}`, { stack: error.stack });
-    //         return res.status(500).json({ error: 'Internal server error!' });
-    //     }
-    // }
-
-    // Give winning to the users who all won
-    
     async saveCoinBet(req, res) {
-        const connection = await db.promise().getConnection();
-
         try {
-            await connection.beginTransaction();
-
             const user_id = req.user_id;
             if (!user_id) {
-                await connection.rollback();
                 return res.status(401).json({ msg: 'Invalid user.' });
             }
-
+    
             const { match_id, prediction, minimum_betamount, bet_amount } = req.body;
-
-            // Step 1: Match + Betting status
+    
+            // Step 1 & 2: Match status and Betting status
             const [matchStatus, betStatus] = await Promise.all([
                 coinFlipService.isMatchOver(user_id, match_id),
                 coinFlipService.checkBettingStatus()
             ]);
 
             if (matchStatus.isMatchOver) {
-                await connection.rollback();
                 return res.status(401).json({
-                    message: 'Match is over. Try again.'
+                    message: 'Sorry! This match is already over. Money not deducted. Try again.',
                 });
             }
-
+    
+            // if (matchStatus.isMatchOver < matchStatus.isWithin60SecAfterBet) {
+            //     return res.status(401).json({
+            //         message: 'Sorry! This match is already over. Money not deducted. Try again.',
+            //     });
+            // }
+    
             if (betStatus === '0') {
-                await connection.rollback();
-                return res.status(401).json({ message: 'Betting is off.' });
+                return res.status(401).json({ message: 'Betting is currently off.' });
             }
-
+    
             if (bet_amount < minimum_betamount) {
-                await connection.rollback();
-                return res.status(401).json({ message: 'Amount below minimum.' });
+                return res.status(401).json({ message: 'Bet amount is less than the minimum bet amount!' });
             }
 
-            // Step 2: Restriction
+            // Step 3: Check if the betting is allowed by the admin or not (At the time of withdrawing the money user has access to toggle the betting rights of the user)
             const bettingRestricted = await liveBetService.isUserRestrictedFromBetting(user_id);
             if (bettingRestricted > 0) {
-                await connection.rollback();
+                // ❌ At least one row has is_bet_allowed = 1
                 return res.status(401).json({
-                    message: 'Betting restricted due to withdrawal.'
+                    message: 'Your withdrawal is in progress so betting is currently restricted. Please try again after some time!',
                 });
             }
-
-            // Step 3: Wallet + Bonus + Already Bet
+    
+            // Step 4: Wallet & Bonus amount fetch + Bet existence check
             const [walletAmountRaw, bonusAmountRaw, alreadyBetted] = await Promise.all([
                 coinFlipService.calculateWalletAmount(user_id),
                 coinFlipService.calculateBonus(user_id),
                 coinFlipService.checkAlreadyBet(user_id, match_id)
             ]);
-
+    
             const walletAmount = parseFloat(walletAmountRaw);
             const bonusAmount = parseFloat(bonusAmountRaw);
             const totalBalance = walletAmount + bonusAmount;
-
+    
             if (bet_amount > totalBalance) {
-                await connection.rollback();
-                return res.status(401).json({ message: 'Insufficient balance.' });
+                return res.status(401).json({ message: 'Your bet amount is greater than your wallet amount!' });
             }
-
+    
             if (alreadyBetted) {
-                await connection.rollback();
-                return res.status(401).json({ message: 'Bet already placed.' });
+                return res.status(401).json({ message: 'You have already placed a bet on this match!' });
             }
-
-            // Step 4: Split deduction
+    
+            // Step 5: Calculate deduction split
             let usedFromBonus = 0, usedFromWallet = 0;
-
             if (bonusAmount >= bet_amount) {
                 usedFromBonus = bet_amount;
             } else {
                 usedFromBonus = bonusAmount;
                 usedFromWallet = bet_amount - bonusAmount;
             }
-
+    
             const updatedBonus = bonusAmount - usedFromBonus;
             const updatedWallet = walletAmount - usedFromWallet;
-
-            // Step 5: Place Bet (WITH DB TIME CHECK)
+    
+            // Step 6: Save Bet
             const betData = {
                 user_id,
                 match_id,
@@ -328,26 +159,31 @@ class CoinFlipController {
                 walletAmount,
                 prediction,
             };
-
-            const bet = await coinFlipService.placeCoinBet(betData, connection);
+            const bet = await coinFlipService.placeCoinBet(betData);
             const LastBetID = bet.betId;
-
-            // Step 6: Verify
-            const existingBet = await coinFlipService.getBetByIdAndUser(user_id, LastBetID, connection);
-            if (!existingBet) {
-                throw new Error('Bet not found after placement.');
+    
+            if (!LastBetID) {
+                return res.status(500).json({ error: 'Failed to place bet.' });
             }
-
-            // Step 7: Threshold email
+    
+            const existingBet = await coinFlipService.getBetByIdAndUser(user_id, LastBetID);
+            if (!existingBet) {
+                return res.status(500).json({ error: 'Bet not found after placement.' });
+            }
+    
+            // Step 7: Check threshold and send email
             const thresholdAmount = await coinFlipService.getThresholdAmount();
             if (thresholdAmount && bet_amount > thresholdAmount) {
                 const userData = await coinFlipService.getUserDetails(user_id);
-                if (userData) {
+                if (userData) 
+                {
+                    // YEH LINE ADD KAREIN
+                    console.log(`Email bhejne ki koshish kar raha hoon... Bet Amount: ${bet_amount}, Threshold: ${thresholdAmount}`);
                     coinFlipService.sendEmail(userData, bet_amount).catch(console.error);
                 }
             }
-
-            // Step 8: Report
+    
+            // Step 8: Insert report
             const reportData = {
                 bet_id: LastBetID,
                 user_id,
@@ -355,12 +191,13 @@ class CoinFlipController {
                 bet_from_bonus: usedFromBonus,
                 bet_from_wallet: usedFromWallet,
             };
-
-            await coinFlipService.insertReport(reportData, connection);
-
-            // Step 9: History
+            await coinFlipService.insertReport(reportData);
+    
+            // Step 9: Insert transaction history
+            const insertTasks = [];
+    
             if (usedFromBonus > 0) {
-                await coinFlipService.insertBonusHistory({
+                const bonusHistory = {
                     user_id,
                     bet_id: LastBetID,
                     match_id,
@@ -368,11 +205,12 @@ class CoinFlipController {
                     total_bonus: updatedBonus,
                     bonus_type: 'Debit',
                     bonus_status: 'Bet',
-                }, connection);
+                };
+                insertTasks.push(coinFlipService.insertBonusHistory(bonusHistory));
             }
-
+    
             if (usedFromWallet > 0) {
-                await coinFlipService.insertTransactionHistory({
+                const walletHistory = {
                     bet_id: LastBetID,
                     match_id,
                     user_id,
@@ -380,31 +218,26 @@ class CoinFlipController {
                     total_amount: updatedWallet,
                     type: 'Debit',
                     t_status: 'Bet',
-                }, connection);
+                };
+                insertTasks.push(coinFlipService.insertTransactionHistory(walletHistory));
             }
-
-            // ✅ COMMIT
-            await connection.commit();
-
+    
+            await Promise.all(insertTasks);
+    
+            // Final Response
             return res.status(200).json({
                 status: true,
                 message: 'Coin Flip bet placed successfully!'
             });
-
+    
         } catch (error) {
-            // ❌ ROLLBACK
-            await connection.rollback();
-
             console.error(error);
-            return res.status(500).json({
-                message: error.message || 'Internal server error'
-            });
-
-        } finally {
-            connection.release();
+            logger.error(`Error in saving coin flip: ${error.message}`, { stack: error.stack });
+            return res.status(500).json({ error: 'Internal server error!' });
         }
     }
 
+    // Give winning to the users who all won
     async createWinner(req, res) { 
         console.log('createWinner API called');
     
