@@ -683,12 +683,26 @@ class LiveBetModel {
     
         return rows.length > 0;
     }
+
+    static async getProcessingBet(user_id, match_id) {
+        const [rows] = await db.promise().query(
+            `SELECT bet_id 
+            FROM tbl_bet 
+            WHERE user_id = ? 
+            AND match_id = ? 
+            AND processing_flag = 1
+            LIMIT 1`,
+            [user_id, match_id]
+        );
+
+        return rows[0] || null;
+    }
     
     static async insertBet(connection, data) {
         const [result] = await connection.query(
             `INSERT INTO tbl_bet 
-            (user_id, match_id, team_id, toss_id, amount, bonus_amount, wallet_amount, bet_date) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            (user_id, match_id, team_id, toss_id, amount, bonus_amount, wallet_amount, bet_date, processing_flag) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [
                 data.user_id,
                 data.match_id,
@@ -732,6 +746,63 @@ class LiveBetModel {
             ]
         );
     }
+
+    // Inserts only if the current total_amount matches what we read under lock
+    static async insertTransactionIfSufficient(connection, data) {
+        const [result] = await connection.query(
+            `INSERT INTO tbl_transaction_history 
+            (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id,
+            debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id)
+            SELECT 0, ?, ?, 0, 0, ?, 0, ?, ?, 'Debit', 'Bet', ?, 0
+            FROM tbl_transaction_history
+            WHERE user_id = ?
+            AND total_amount = ?        -- ← exact match to what we read, not just >=
+            ORDER BY trans_id DESC
+            LIMIT 1`,
+            // No FOR UPDATE needed here — row already locked by getBonusForUpdate above
+            [
+                data.betId,
+                data.match_id,
+                data.user_id,
+                data.walletUsed,
+                data.remainingWallet,
+                data.istTime,
+                data.user_id,
+                data.expectedCurrentAmount  // must match exactly
+            ]
+        );
+
+        if (result.affectedRows === 0) {
+            throw new Error('Insufficient wallet balance');
+        }
+    }
+
+    static async insertBonusIfSufficient(connection, data) {
+        const [result] = await connection.query(
+            `INSERT INTO tbl_bonus_history
+            (user_id, bet_id, match_id, bonusID, debit_bonus, total_bonus, bonus_type, bonus_status, created_date)
+            SELECT ?, ?, ?, 0, ?, ?, 'Debit', 'Bet', ?
+            FROM tbl_bonus_history
+            WHERE user_id = ?
+            AND total_bonus = ?         -- ← exact match guard
+            ORDER BY bonus_id DESC
+            LIMIT 1`,
+            [
+                data.user_id,
+                data.betId,
+                data.match_id,
+                data.UsedBonus,
+                data.remainingBonus,
+                data.istTime,
+                data.user_id,
+                data.expectedCurrentBonus
+            ]
+        );
+
+        if (result.affectedRows === 0) {
+            throw new Error('Insufficient bonus balance');
+        }
+    }
     
     static async insertReport(connection, data) {
         await connection.query(
@@ -748,6 +819,24 @@ class LiveBetModel {
                 data.walletUsed,
                 data.istTime
             ]
+        );
+    }
+
+    static async markBetCompleted(connection, betId) {
+        await connection.query(
+            `UPDATE tbl_bet 
+            SET processing_flag = 0 
+            WHERE bet_id = ?`,
+            [betId]
+        );
+    }
+
+    static async markBetFailed(betId) {
+        await db.promise().query(
+            `UPDATE tbl_bet 
+            SET processing_flag = 0 
+            WHERE bet_id = ?`,
+            [betId]
         );
     }
 }
