@@ -233,6 +233,19 @@ class LiveBetModel {
     
         return rows[0];
     }
+
+    static async fetchUserBet(matchId, userId) {
+        const query = `
+            SELECT id AS bet_id, processing_flag
+            FROM tbl_bet
+            WHERE match_id = ? AND user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+        `;
+
+        const [rows] = await db.promise().query(query, [matchId, userId]);
+        return rows.length ? rows[0] : null;
+    }
     
     static async fetchTossTypes() {
         const query = `
