@@ -233,6 +233,19 @@ class LiveBetModel {
     
         return rows[0];
     }
+
+    static async fetchUserBet(matchId, userId) {
+        const query = `
+            SELECT bet_id, processing_flag
+            FROM tbl_bet
+            WHERE match_id = ? AND user_id = ?
+            ORDER BY bet_id DESC
+            LIMIT 1
+        `;
+
+        const [rows] = await db.promise().query(query, [matchId, userId]);
+        return rows.length ? rows[0] : null;
+    }
     
     static async fetchTossTypes() {
         const query = `
@@ -756,7 +769,7 @@ class LiveBetModel {
             SELECT 0, ?, ?, 0, 0, ?, 0, ?, ?, 'Debit', 'Bet', ?, 0
             FROM tbl_transaction_history
             WHERE user_id = ?
-            AND total_amount = ?        -- ← exact match to what we read, not just >=
+            AND total_amount = ?
             ORDER BY trans_id DESC
             LIMIT 1`,
             // No FOR UPDATE needed here — row already locked by getBonusForUpdate above
@@ -784,7 +797,7 @@ class LiveBetModel {
             SELECT ?, ?, ?, 0, ?, ?, 'Debit', 'Bet', ?
             FROM tbl_bonus_history
             WHERE user_id = ?
-            AND total_bonus = ?         -- ← exact match guard
+            AND total_bonus = ?
             ORDER BY bonus_id DESC
             LIMIT 1`,
             [
