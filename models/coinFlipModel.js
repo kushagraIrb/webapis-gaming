@@ -245,22 +245,34 @@ class CoinFlipModel {
     }
 
     // Place a bet and insert the bet data into the tbl_bet table
+    // static async saveCoinBet(betData) {
+    //     try {
+    //         // Get the current time in IST
+    //         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+    //         const query = `INSERT INTO tbl_coin_bet (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+    //         const [result] = await db.promise().query(query, [
+    //             betData.user_id,
+    //             betData.match_id,
+    //             betData.amount,
+    //             betData.bonusAmount,
+    //             betData.walletAmount,
+    //             betData.prediction,
+    //             istTime
+    //         ]);
+            
+    //         return { betId: result.insertId };  // Return the inserted bet ID along with the bet data
+    //     } catch (error) {
+    //         throw new Error('Error placing bet: ' + error.message);
+    //     }
+    // }
+
+    // Place a bet and insert the bet data into the tbl_bet table
     static async saveCoinBet(betData) {
         try {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-            // const query = `INSERT INTO tbl_coin_bet (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-
-            // const [result] = await db.promise().query(query, [
-            //     betData.user_id,
-            //     betData.match_id,
-            //     betData.amount,
-            //     betData.bonusAmount,
-            //     betData.walletAmount,
-            //     betData.prediction,
-            //     istTime
-            // ]);
 
             const query = `
                 INSERT INTO tbl_coin_bet 
