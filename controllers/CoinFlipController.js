@@ -2,7 +2,7 @@ const { logger } = require('../logger');
 const coinFlipService = require('../services/coinFlipService');
 const liveBetService = require('../services/liveBetService');
 const fs = require('fs');
-
+const moment = require('moment-timezone');
 require('dotenv').config();
 
 class CoinFlipController {
@@ -237,11 +237,51 @@ class CoinFlipController {
         }
     }
 
-    // Give winning to the users who all won
+    // // Give winning to the users who all won
+    // async createWinner(req, res) { 
+    //     console.log('createWinner API called');
+    
+    //     let matchResult = null;
+    
+    //     try {
+    //         const token = req.query.token || req.headers['x-auth-token'];
+    
+    //         if (token !== process.env.COINFLIP_SECRET_KEY) {
+    //             return res.status(403).json({ message: 'Unauthorized request' });
+    //         }
+    
+    //         matchResult = await coinFlipService.getEligibleMatch();
+    
+    //         if (!matchResult) {
+    //             return res.status(200).send({ message: 'No eligible match to process.' });
+    //         }
+    
+    //         await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+    
+    //         return res.status(200).send('Match result processed and winnings distributed.');
+    
+    //     } catch (error) {
+    //         console.error('Error in createWinner:', error.message);
+    //         logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
+    
+    //         return res.status(500).send({ msg: 'Error occurred', error: error.message });
+    
+    //     } finally {
+    //         try {
+    //             console.log('Ensuring next game creation...');
+    //             await coinFlipService.createGame();
+    //         } catch (err) {
+    //             console.error('Critical: createGame failed:', err.message);
+    //             logger.error('createGame failed in finally block', { stack: err.stack });
+    //         }
+    //     }
+    // }
+
+
     async createWinner(req, res) { 
         console.log('createWinner API called');
     
-        let matchResult = null;
+        let shouldCreateNextMatch = false;
     
         try {
             const token = req.query.token || req.headers['x-auth-token'];
@@ -250,15 +290,60 @@ class CoinFlipController {
                 return res.status(403).json({ message: 'Unauthorized request' });
             }
     
-            matchResult = await coinFlipService.getEligibleMatch();
+            console.log("===== DEBUG START =====");
     
-            if (!matchResult) {
-                return res.status(200).send({ message: 'No eligible match to process.' });
+            // Step 1: Get current match
+            const currentMatch = await coinFlipService.currentCoinFlipMatch();
+            console.log("Current Match:", currentMatch);
+    
+            if (!currentMatch) {
+                console.log("❌ No current match found");
+                return res.status(200).json({ message: "No active match found" });
             }
     
-            await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+            // Step 2: Time check
+            const matchDateTime = moment.tz(
+                `${currentMatch.match_date} ${currentMatch.match_time}`,
+                "YYYY-MM-DD HH:mm:ss",
+                "Asia/Kolkata"
+            );
     
-            return res.status(200).send('Match result processed and winnings distributed.');
+            const now = moment.tz("Asia/Kolkata");
+            const diff = now.diff(matchDateTime, 'seconds');
+    
+            console.log("Match Time:", matchDateTime.format());
+            console.log("Current Time:", now.format());
+            console.log("Time Diff:", diff);
+    
+            // ❌ 30 sec not completed → STOP
+            if (diff < 30) {
+                console.log("❌ 30 sec not completed");
+                return res.status(200).json({
+                    message: "Wait: 30 seconds not completed yet"
+                });
+            }
+    
+            // ✅ 30 sec complete → allow next match creation
+            shouldCreateNextMatch = true;
+    
+            // Step 3: Get eligible match
+            const matchResult = await coinFlipService.getEligibleMatch();
+            console.log("Match Result:", matchResult);
+    
+            if (matchResult) {
+                try {
+                    console.log("✅ Giving winnings...");
+                    await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+                } catch (err) {
+                    console.error("❌ Winnings failed but continuing:", err.message);
+                }
+            } else {
+                console.log("⚠️ No eligible match found, skipping winnings");
+            }
+    
+            console.log("===== DEBUG END =====");
+    
+            return res.status(200).send('Match processed');
     
         } catch (error) {
             console.error('Error in createWinner:', error.message);
@@ -267,15 +352,19 @@ class CoinFlipController {
             return res.status(500).send({ msg: 'Error occurred', error: error.message });
     
         } finally {
-            try {
-                console.log('Ensuring next game creation...');
-                await coinFlipService.createGame();
-            } catch (err) {
-                console.error('Critical: createGame failed:', err.message);
-                logger.error('createGame failed in finally block', { stack: err.stack });
+            // ✅ Only after 30 sec → create next match
+            if (shouldCreateNextMatch) {
+                try {
+                    console.log("🔁 Creating next match...");
+                    await coinFlipService.createGame();
+                } catch (err) {
+                    console.error("❌ createGame failed:", err.message);
+                    logger.error('createGame failed in finally block', { stack: err.stack });
+                }
             }
         }
     }
+
 
     async coinFlipHistory(req, res) {
         try {
