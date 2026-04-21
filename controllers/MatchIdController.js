@@ -312,7 +312,8 @@ class MatchIdController {
 
     async cancelTransferRequest(req, res) {
         try {
-            const { transfer_id } = req.body;
+            // const { transfer_id } = req.body;
+            const { transfer_id, rejection_reason  } = req.body;
     
             if (!transfer_id) {
                 return res.status(400).send({
@@ -321,7 +322,9 @@ class MatchIdController {
                 });
             }
     
-            const result = await matchIdService.cancelTransferRequest(transfer_id);
+            // const result = await matchIdService.cancelTransferRequest(transfer_id);
+            const result = await matchIdService.cancelTransferRequest(transfer_id,rejection_reason);
+
     
             if (result.state === 'already_rejected') {
                 return res.status(400).send({
