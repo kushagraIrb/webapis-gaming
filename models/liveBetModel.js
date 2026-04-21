@@ -238,7 +238,7 @@ class LiveBetModel {
         const query = `
             SELECT bet_id, processing_flag
             FROM tbl_bet
-            WHERE match_id = ? AND user_id = ?
+            WHERE match_id = ? AND user_id = ? AND status = 1
             ORDER BY bet_id DESC
             LIMIT 1
         `;

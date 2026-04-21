@@ -238,6 +238,7 @@ class MatchIdModel {
                 ds.site_name,
                 tr.transfer_mode,
                 tr.amount,
+                tr.rejection_reason,  -- ✅ FIX
                 tr.status,
                 tr.created_at
             FROM tbl_transfer_requests tr
