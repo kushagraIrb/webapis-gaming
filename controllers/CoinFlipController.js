@@ -278,92 +278,181 @@ class CoinFlipController {
     // }
 
 
+    //new logic of curret time and match time
     async createWinner(req, res) { 
-        console.log('createWinner API called');
-    
+        
+        console.log("🚀 API HIT (IST):", moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"));
+
         let shouldCreateNextMatch = false;
-    
+
         try {
             const token = req.query.token || req.headers['x-auth-token'];
-    
+
             if (token !== process.env.COINFLIP_SECRET_KEY) {
                 return res.status(403).json({ message: 'Unauthorized request' });
             }
-    
-            console.log("===== DEBUG START =====");
-    
+
             // Step 1: Get current match
             const currentMatch = await coinFlipService.currentCoinFlipMatch();
-            console.log("Current Match:", currentMatch);
-    
+            console.log("🎯 Current Match FULL:", currentMatch);
+
             if (!currentMatch) {
-                console.log("❌ No current match found");
                 return res.status(200).json({ message: "No active match found" });
             }
-    
-            // Step 2: Time check
+
+            const now = moment.tz("Asia/Kolkata");
+
+            // ✅ Combine match_date + match_time
             const matchDateTime = moment.tz(
-                `${currentMatch.match_date} ${currentMatch.match_time}`,
+                `${moment(currentMatch.match_date).format("YYYY-MM-DD")} ${currentMatch.match_time}`,
                 "YYYY-MM-DD HH:mm:ss",
                 "Asia/Kolkata"
             );
-    
-            const now = moment.tz("Asia/Kolkata");
-            const diff = now.diff(matchDateTime, 'seconds');
-    
-            console.log("Match Time:", matchDateTime.format());
-            console.log("Current Time:", now.format());
-            console.log("Time Diff:", diff);
-    
-            // ❌ 30 sec not completed → STOP
-            if (diff < 30) {
-                console.log("❌ 30 sec not completed");
+
+            console.log("🕒 Match End:", matchDateTime.format("YYYY-MM-DD HH:mm:ss"));
+            console.log("🕒 Current Time:", now.format("YYYY-MM-DD HH:mm:ss"));
+
+            if (!matchDateTime.isValid()) {
+                return res.status(500).json({ message: "Invalid match time" });
+            }
+
+            // ❌ If match still running → STOP
+            if (now.isBefore(matchDateTime)) {
+                console.log("⏳ Match still running → skip");
+
                 return res.status(200).json({
-                    message: "Wait: 30 seconds not completed yet"
+                    message: "Match not finished yet"
                 });
             }
-    
-            // ✅ 30 sec complete → allow next match creation
+
+            // ✅ Match finished → proceed
+            console.log("✅ Match finished → processing");
+
             shouldCreateNextMatch = true;
-    
-            // Step 3: Get eligible match
+
+            // Step 2: Winner logic
             const matchResult = await coinFlipService.getEligibleMatch();
-            console.log("Match Result:", matchResult);
-    
+
             if (matchResult) {
                 try {
                     console.log("✅ Giving winnings...");
                     await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
                 } catch (err) {
-                    console.error("❌ Winnings failed but continuing:", err.message);
+                    console.error("❌ Winnings failed:", err.message);
                 }
             } else {
-                console.log("⚠️ No eligible match found, skipping winnings");
+                console.log("⚠️ No eligible match found");
             }
-    
-            console.log("===== DEBUG END =====");
-    
+
             return res.status(200).send('Match processed');
-    
+
         } catch (error) {
             console.error('Error in createWinner:', error.message);
-            logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
-    
+
             return res.status(500).send({ msg: 'Error occurred', error: error.message });
-    
+
         } finally {
-            // ✅ Only after 30 sec → create next match
+            // ✅ Only after match finished
             if (shouldCreateNextMatch) {
                 try {
                     console.log("🔁 Creating next match...");
                     await coinFlipService.createGame();
                 } catch (err) {
                     console.error("❌ createGame failed:", err.message);
-                    logger.error('createGame failed in finally block', { stack: err.stack });
                 }
             }
         }
     }
+
+
+
+
+    // async createWinner(req, res) { 
+    //     console.log('createWinner API called');
+    
+    //     let shouldCreateNextMatch = false;
+    
+    //     try {
+    //         const token = req.query.token || req.headers['x-auth-token'];
+    
+    //         if (token !== process.env.COINFLIP_SECRET_KEY) {
+    //             return res.status(403).json({ message: 'Unauthorized request' });
+    //         }
+    
+    //         console.log("===== DEBUG START =====");
+    
+    //         // Step 1: Get current match
+    //         const currentMatch = await coinFlipService.currentCoinFlipMatch();
+    //         console.log("Current Match:", currentMatch);
+    
+    //         if (!currentMatch) {
+    //             console.log("❌ No current match found");
+    //             return res.status(200).json({ message: "No active match found" });
+    //         }
+    
+    //         // Step 2: Time check
+    //         const matchDateTime = moment.tz(
+    //             `${currentMatch.match_date} ${currentMatch.match_time}`,
+    //             "YYYY-MM-DD HH:mm:ss",
+    //             "Asia/Kolkata"
+    //         );
+    
+    //         const now = moment.tz("Asia/Kolkata");
+    //         const diff = now.diff(matchDateTime, 'seconds');
+    
+    //         console.log("Match Time:", matchDateTime.format());
+    //         console.log("Current Time:", now.format());
+    //         console.log("Time Diff:", diff);
+    
+    //         // ❌ 30 sec not completed → STOP
+    //         if (diff < 30) {
+    //             console.log("❌ 30 sec not completed");
+    //             return res.status(200).json({
+    //                 message: "Wait: 30 seconds not completed yet"
+    //             });
+    //         }
+    
+    //         // ✅ 30 sec complete → allow next match creation
+    //         shouldCreateNextMatch = true;
+    
+    //         // Step 3: Get eligible match
+    //         const matchResult = await coinFlipService.getEligibleMatch();
+    //         console.log("Match Result:", matchResult);
+    
+    //         if (matchResult) {
+    //             try {
+    //                 console.log("✅ Giving winnings...");
+    //                 await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+    //             } catch (err) {
+    //                 console.error("❌ Winnings failed but continuing:", err.message);
+    //             }
+    //         } else {
+    //             console.log("⚠️ No eligible match found, skipping winnings");
+    //         }
+    
+    //         console.log("===== DEBUG END =====");
+    
+    //         return res.status(200).send('Match processed');
+    
+    //     } catch (error) {
+    //         console.error('Error in createWinner:', error.message);
+    //         logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
+    
+    //         return res.status(500).send({ msg: 'Error occurred', error: error.message });
+    
+    //     } finally {
+    //         // ✅ Only after 30 sec → create next match
+    //         if (shouldCreateNextMatch) {
+    //             try {
+    //                 console.log("🔁 Creating next match...");
+    //                 await coinFlipService.createGame();
+    //             } catch (err) {
+    //                 console.error("❌ createGame failed:", err.message);
+    //                 logger.error('createGame failed in finally block', { stack: err.stack });
+    //             }
+    //         }
+    //     }
+    // }
 
 
     async coinFlipHistory(req, res) {
