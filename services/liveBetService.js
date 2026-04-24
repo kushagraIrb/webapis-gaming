@@ -426,9 +426,9 @@ class LiveBetService {
       }
     }
 
-    static async getBetAmount(betId) {
+    static async getBetAmount(userId, betId, matchId) {
       try {
-        const betAmount = await liveBetModel.fetchBetAmount(betId);
+        const betAmount = await liveBetModel.fetchBetAmount(userId, betId, matchId);
         return betAmount;
       } catch (error) {
         console.error("Error fetching bet amount in service:", error);
