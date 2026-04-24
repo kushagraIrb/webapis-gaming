@@ -275,7 +275,7 @@ class CoinFlipController {
             }
 
             // ❌ If match still running → STOP
-            const bufferSeconds = 2;
+            const bufferSeconds = 5;
 
             if (now.isBefore(matchDateTime.clone().subtract(bufferSeconds, 'seconds'))) {
                 console.log("⏳ Match still running → skip");
