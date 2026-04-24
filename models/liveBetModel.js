@@ -342,11 +342,18 @@ class LiveBetModel {
         return result ? result[0].total_amount : 0;
     }
 
-    static async fetchBetAmount(betId) {
+    static async fetchBetAmount(userId, betId, matchId) {
         try {
-            const query = `SELECT debit_amount FROM tbl_transaction_history WHERE bet_id = ? AND type = 'Debit'`;
-            const [result] = await db.promise().query(query, [betId]);
-
+            const query = `
+                SELECT debit_amount 
+                FROM tbl_transaction_history 
+                WHERE bet_id = ? 
+                  AND user_id = ?
+                  AND match_id = ?
+                  AND type = 'Debit'
+            `;
+            const [result] = await db.promise().query(query, [betId, userId, matchId]);
+    
             if (result.length > 0) {
                 return result[0].debit_amount;
             } else {
