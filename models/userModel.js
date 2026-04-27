@@ -9,12 +9,14 @@ class UserModel {
                 SELECT 
                     r.id, r.first_name, r.last_name, r.email, r.phone, 
                     r.pincode, r.state, r.profile_image, r.traffic_source, r.attr, r.status, r.ip_status,
+                    r.created AS created_at,
                     b.league_name 
                 FROM tbl_registration AS r
                 LEFT JOIN tbl_bonus_league AS b ON r.bonus_league_id = b.id
                 WHERE r.id = ?
             `;
             const [result] = await db.promise().query(query, [userId]);
+            console.log("User Details Query Result:", result[0]);
             return result[0] || null;
         } catch (error) {
             throw new Error('Database query error');
