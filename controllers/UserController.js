@@ -16,8 +16,6 @@ class UserController {
             }
     
             const userDetails = await userService.fetchUserDetailsByJwtToken(user_id);
-            console.log("Final API Response:", userDetails);
-    
             return res.status(200).json(userDetails);
     
         } catch (error) {

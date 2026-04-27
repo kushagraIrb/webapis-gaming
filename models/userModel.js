@@ -16,7 +16,6 @@ class UserModel {
                 WHERE r.id = ?
             `;
             const [result] = await db.promise().query(query, [userId]);
-            console.log("User Details Query Result:", result[0]);
             return result[0] || null;
         } catch (error) {
             throw new Error('Database query error');
