@@ -16,7 +16,6 @@ class UserController {
             }
     
             const userDetails = await userService.fetchUserDetailsByJwtToken(user_id);
-    
             return res.status(200).json(userDetails);
     
         } catch (error) {
