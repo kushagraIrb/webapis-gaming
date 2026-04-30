@@ -239,7 +239,7 @@ class CoinFlipController {
 
     async createWinner(req, res) { 
         
-        console.log("🚀 API HIT (IST):", moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"));
+        // console.log("🚀 API HIT (IST):", moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"));
 
         let shouldCreateNextMatch = false;
 
@@ -252,7 +252,7 @@ class CoinFlipController {
 
             // Step 1: Get current match
             const currentMatch = await coinFlipService.currentCoinFlipMatch();
-            console.log("🎯 Current Match FULL:", currentMatch);
+            // console.log("🎯 Current Match FULL:", currentMatch);
 
             if (!currentMatch) {
                 return res.status(200).json({ message: "No active match found" });
@@ -267,8 +267,8 @@ class CoinFlipController {
                 "Asia/Kolkata"
             );
 
-            console.log("🕒 Match End:", matchDateTime.format("YYYY-MM-DD HH:mm:ss"));
-            console.log("🕒 Current Time:", now.format("YYYY-MM-DD HH:mm:ss"));
+            // console.log("🕒 Match End:", matchDateTime.format("YYYY-MM-DD HH:mm:ss"));
+            // console.log("🕒 Current Time:", now.format("YYYY-MM-DD HH:mm:ss"));
 
             if (!matchDateTime.isValid()) {
                 return res.status(500).json({ message: "Invalid match time" });
@@ -286,7 +286,7 @@ class CoinFlipController {
             }
 
             // ✅ Match finished → proceed
-            console.log("✅ Match finished → processing");
+            // console.log("✅ Match finished → processing");
 
             shouldCreateNextMatch = true;
 
@@ -295,7 +295,7 @@ class CoinFlipController {
 
             if (matchResult) {
                 try {
-                    console.log("✅ Giving winnings...");
+                    // console.log("✅ Giving winnings...");
                     await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
                 } catch (err) {
                     console.error("❌ Winnings failed:", err.message);
@@ -315,7 +315,7 @@ class CoinFlipController {
             // ✅ Only after match finished
             if (shouldCreateNextMatch) {
                 try {
-                    console.log("🔁 Creating next match...");
+                    // console.log("🔁 Creating next match...");
                     await coinFlipService.createGame();
                 } catch (err) {
                     console.error("❌ createGame failed:", err.message);
