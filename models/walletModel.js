@@ -50,6 +50,10 @@ class walletModel {
     }
 
     static async getArchiveWalletHistory(userId, year, start, perPage) {
+        const startDate = `${year}-01-01`;
+        const endDate = `${Number(year) + 1}-01-01`;
+        console.log('startDate: ', startDate);
+        console.log('endDate: ', endDate);
         let query = `
             SELECT t.transaction_id, t.d_w_id, t.bet_id, t.win_id, t.coin_match_id, 
                    t.credit_amount, t.debit_amount, t.total_amount, t.type, t.t_status, 
@@ -61,17 +65,21 @@ class walletModel {
             LEFT JOIN tbl_upcoming_match AS m ON t.match_id = m.id
             LEFT JOIN tbl_bet AS b ON t.bet_id = b.bet_id
             LEFT JOIN tbl_with_dep AS wd ON t.d_w_id = wd.tid
-            WHERE t.user_id = ? AND YEAR(t.transaction_date) = ?
+            WHERE t.user_id = ?
+              AND t.transaction_date >= ?
+              AND t.transaction_date < ?
             ORDER BY t.trans_id DESC
         `;
 
-        const params = [userId, year];
+        const params = [userId, startDate, endDate];
         if (perPage !== null && start !== null) {
             query += ` LIMIT ?, ?`;
             params.push(start, perPage);
         }
+        console.log('query', query);
 
         const [rows] = await db.promise().query(query, params);
+        console.log(db.format(query, params));
 
         return rows.map(row => ({
             ...row,
@@ -92,12 +100,16 @@ class walletModel {
     }
 
     static async countArchiveWalletHistory(userId, year) {
+        const startDate = `${year}-01-01`;
+        const endDate = `${Number(year) + 1}-01-01`;
         const query = `
             SELECT COUNT(*) AS total_count 
             FROM tbl_archive_trans_his
-            WHERE user_id = ? AND YEAR(transaction_date) = ?
+            WHERE user_id = ?
+              AND transaction_date >= ?
+              AND transaction_date < ?
         `;
-        const [result] = await db.promise().query(query, [userId, year]);
+        const [result] = await db.promise().query(query, [userId, startDate, endDate]);
         return result[0].total_count;
     }
 
