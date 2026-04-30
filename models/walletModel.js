@@ -52,8 +52,7 @@ class walletModel {
     static async getArchiveWalletHistory(userId, year, start, perPage) {
         const startDate = `${year}-01-01`;
         const endDate = `${Number(year) + 1}-01-01`;
-        console.log('startDate: ', startDate);
-        console.log('endDate: ', endDate);
+        
         let query = `
             SELECT t.transaction_id, t.d_w_id, t.bet_id, t.win_id, t.coin_match_id, 
                    t.credit_amount, t.debit_amount, t.total_amount, t.type, t.t_status, 
@@ -61,14 +60,15 @@ class walletModel {
                    m.match_title, m.match_date, m.match_time, m.win_ratio, 
                    b.bet_date,
                    wd.reasons AS reason
-            FROM tbl_archive_trans_his AS t
-            LEFT JOIN tbl_upcoming_match AS m ON t.match_id = m.id
-            LEFT JOIN tbl_bet AS b ON t.bet_id = b.bet_id
-            LEFT JOIN tbl_with_dep AS wd ON t.d_w_id = wd.tid
-            WHERE t.user_id = ?
-              AND t.transaction_date >= ?
-              AND t.transaction_date < ?
-            ORDER BY t.trans_id DESC
+            FROM (
+                SELECT trans_id, transaction_id, d_w_id, bet_id, match_id, win_id, coin_match_id,
+                       credit_amount, debit_amount, total_amount, type, t_status,
+                       transaction_date, cancel_charge, charge_amt_cut
+                FROM tbl_archive_trans_his
+                WHERE user_id = ?
+                  AND transaction_date >= ?
+                  AND transaction_date < ?
+                ORDER BY trans_id DESC
         `;
 
         const params = [userId, startDate, endDate];
@@ -76,10 +76,16 @@ class walletModel {
             query += ` LIMIT ?, ?`;
             params.push(start, perPage);
         }
-        console.log('query', query);
+
+        query += `
+            ) AS t
+            LEFT JOIN tbl_upcoming_match AS m ON t.match_id = m.id
+            LEFT JOIN tbl_bet AS b ON t.bet_id = b.bet_id
+            LEFT JOIN tbl_with_dep AS wd ON t.d_w_id = wd.tid
+            ORDER BY t.trans_id DESC
+        `;
 
         const [rows] = await db.promise().query(query, params);
-        console.log(db.format(query, params));
 
         return rows.map(row => ({
             ...row,
