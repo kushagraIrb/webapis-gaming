@@ -9,6 +9,8 @@ router.use(express.json());
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
+router.get('/history/filters', walletController.fetchArchiveFilterOptions);
+router.get('/history/archive', walletController.fetchArchiveWalletHistory);
 router.get('/history', walletController.fetchWalletHistory);
 router.get('/total-amount', walletController.fetchWalletAmount);
 
