@@ -15,6 +15,7 @@ class MatchIdModel {
             LEFT JOIN tbl_user_match_ids umi
                 ON ds.id = umi.site_id
                 AND umi.user_id = ?
+            WHERE ds.status = 1
             ORDER BY ds.id ASC
         `;
     
@@ -122,7 +123,7 @@ class MatchIdModel {
         let query = `
             SELECT 
                 umi.match_username, umi.match_password, umi.site_id,
-                ds.site_name,ds.site_link
+                ds.site_name,ds.site_link,ds.status
             FROM tbl_user_match_ids umi
             LEFT JOIN tbl_demo_sites ds 
                 ON ds.id = umi.site_id
