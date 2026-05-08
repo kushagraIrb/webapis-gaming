@@ -18,12 +18,7 @@ class DepositService {
 
     // Fetch Admin Bank Account based on the deposit amount
     static async getBankAccountByValue(depositAmount) {
-        try {
-            return await depositModel.fetchBankAccountByValue(depositAmount);
-        } catch (error) {
-            console.error('Error in depositModel:', error.message);
-            throw new Error('Failed to fetch deposit history');
-        }
+        return await depositModel.fetchBankAccountByValue(depositAmount);
     }
 
     // Save deposit for a user

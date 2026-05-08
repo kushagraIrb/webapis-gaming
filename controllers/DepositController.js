@@ -35,26 +35,38 @@ class DepositController {
     // Fetch Admin Bank Account based on the deposit amount
     async getBankAccountByValue(req, res) {
         try {
-            const { depositAmount } = req.params; // Extract the deposit amount from the URL path
-        
+            const { depositAmount } = req.params;
+    
             if (!depositAmount || isNaN(depositAmount)) {
                 return res.status(400).send({
                     status: false,
                     message: 'A valid deposit amount is required',
                 });
             }
-
+    
             const result = await depositService.getBankAccountByValue(depositAmount);
-
+    
+            console.log(result);
+    
+            // handle failure response
+            if (!result?.success) {
+                return res.status(400).send({
+                    status: false,
+                    message: result?.message || 'Unable to fetch bank details'
+                });
+            }
+    
+            // ✅ IMPORTANT FIX HERE
             return res.status(200).send({
                 status: true,
-                data: result,
+                data: result.data,
                 message: 'Bank account fetched successfully',
             });
+    
         } catch (error) {
             console.error('Error fetching deposit history:', error.message);
             logger.error(`Error fetching deposit history: ${error.message}`, { stack: error.stack });
-            
+    
             return res.status(500).send({
                 status: false,
                 message: 'An error occurred while fetching account history',
