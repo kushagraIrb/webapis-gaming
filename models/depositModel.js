@@ -44,88 +44,134 @@ class DepositModel {
     }
     
     static async getEligibleGroup(conn, range_id, depositAmount) {
-        const [groups] = await conn.query(
-            `SELECT * FROM tbl_bank_groups 
-             WHERE range_id = ? 
-             AND is_active = 1 
-             ORDER BY priority ASC`,
-            [range_id]
-        );
+        const today = moment().format('YYYY-MM-DD');
+        
+        // 1. GET RANGE DETAILS
+        const [rangeRows] = await conn.query(`SELECT * FROM tbl_bank_ranges WHERE id = ? LIMIT 1`, [range_id]);
     
-        let selected = null;
+        const range = rangeRows[0];
     
-        for (const group of groups) {
-            if (group.priority == 0) continue;
-    
-            const remaining = group.max_daily_amount - group.consumed_amount;
-            if (depositAmount <= remaining) {
-                selected = group;
-                break;
-            }
+        if (!range) {
+            return null;
         }
     
-        if (!selected) {
+        // 2. FORMAT UNIVERSAL ACTIVE DATE
+        const universalDate = range.universal_group_active_date
+            ? moment(range.universal_group_active_date).format('YYYY-MM-DD')
+            : null;
+
+        // 3. RESET UNIVERSAL FLAG IF OLD DATE
+        if (range.universal_group_active == 1 && universalDate !== today) {
+            await conn.query(`UPDATE tbl_bank_ranges SET universal_group_active = 0 WHERE id = ?`, [range_id]);
+            range.universal_group_active = 0;
+        }
+    
+        // 4. UNIVERSAL GROUP ACTIVE TODAY
+        if (range.universal_group_active == 1 && universalDate === today) {
             const [universal] = await conn.query(
-                `SELECT * FROM tbl_bank_groups 
-                 WHERE range_id = ? 
-                 AND priority = 0 
-                 AND is_active = 1 
+                `SELECT * FROM tbl_bank_groups
+                 WHERE range_id = ? AND priority = 0 AND is_active = 1
                  LIMIT 1`,
                 [range_id]
             );
     
-            selected = universal[0] || null;
+            return universal[0] || null;
         }
     
-        return selected;
-    }
-
-    static async getBankFromGroup(conn, group_id) {
-        let [accounts] = await conn.query(
-            `SELECT bd.*, bga.bank_id, bga.is_chosen
-             FROM tbl_bank_group_accounts bga
-             JOIN tbl_bank_details bd ON bd.id = bga.bank_id
-             WHERE bga.group_id = ? 
-             AND bd.status = 1
-             AND bga.is_chosen = 0
-             ORDER BY bd.id ASC
+        // 5. NORMAL GROUP FLOW
+        const [groups] = await conn.query(
+            `SELECT * FROM tbl_bank_groups
+             WHERE range_id = ? AND priority > 0 AND is_active = 1
+             ORDER BY priority ASC`,
+            [range_id]
+        );
+    
+        for (const group of groups) {
+    
+            const remaining =
+                parseFloat(group.max_daily_amount) -
+                parseFloat(group.consumed_amount);
+    
+            if (parseFloat(depositAmount) <= remaining) {
+                return group;
+            }
+        }
+    
+        // 6. ACTIVATE UNIVERSAL GROUP
+        await conn.query(
+            `UPDATE tbl_bank_ranges
+             SET universal_group_active = 1,
+                 universal_group_active_date = CURDATE()
+             WHERE id = ?`,
+            [range_id]
+        );
+    
+        const [universal] = await conn.query(
+            `SELECT * 
+             FROM tbl_bank_groups
+             WHERE range_id = ?
+             AND priority = 0
+             AND is_active = 1
              LIMIT 1`,
-            [group_id]
+            [range_id]
+        );
+    
+        return universal[0] || null;
+    }
+    
+    static async getBankFromGroup(conn, group) {
+        const remainingGroupAmount = parseFloat(group.max_daily_amount) - parseFloat(group.consumed_amount);
+    
+        // 1. try unused bank
+        let [accounts] = await conn.query(
+            `SELECT bd.*, bga.bank_id
+             FROM tbl_bank_group_accounts bga
+             JOIN tbl_bank_details bd
+                ON bd.id = bga.bank_id
+             WHERE bga.group_id = ?
+             AND bga.is_chosen = 0
+             AND bd.status = 1
+             ORDER BY bd.id ASC
+             LIMIT 1
+             FOR UPDATE`,
+            [group.id]
         );
     
         let bank = accounts[0];
     
-        if (!bank) {
+        // 2. RESET ONLY IF GROUP STILL ACTIVE
+        if (!bank && remainingGroupAmount > 0) {
             await conn.query(
-                `UPDATE tbl_bank_group_accounts 
-                 SET is_chosen = 0 
-                 WHERE group_id = ?`,
-                [group_id]
+                `UPDATE tbl_bank_group_accounts
+                 SET is_chosen = 0
+                 WHERE group_id = ?
+                 AND is_chosen = 1`,
+                [group.id]
             );
     
             [accounts] = await conn.query(
                 `SELECT bd.*, bga.bank_id
                  FROM tbl_bank_group_accounts bga
-                 JOIN tbl_bank_details bd ON bd.id = bga.bank_id
-                 WHERE bga.group_id = ? 
+                 JOIN tbl_bank_details bd
+                    ON bd.id = bga.bank_id
+                 WHERE bga.group_id = ?
                  AND bd.status = 1
                  ORDER BY bd.id ASC
                  LIMIT 1`,
-                [group_id]
+                [group.id]
             );
     
             bank = accounts[0];
         }
     
-        if (!bank) {
-            return null;
-        }
+        if (!bank) return null;
     
         await conn.query(
-            `UPDATE tbl_bank_group_accounts 
-             SET is_chosen = 1 
-             WHERE group_id = ? AND bank_id = ?`,
-            [group_id, bank.bank_id]
+            `UPDATE tbl_bank_group_accounts
+             SET is_chosen = 1
+             WHERE group_id = ?
+             AND bank_id = ?`,
+            [group.id, bank.bank_id]
         );
     
         return bank;
@@ -150,21 +196,21 @@ class DepositModel {
             if (!range) {
                 await conn.rollback();
                 conn.release();
-                return { success: false, message: "Unable to fetch bank details" };
+                return { success: false, message: "Unable to fetch bank details (range)" };
             }
     
             const group = await this.getEligibleGroup(conn, range.id, depositAmount);
             if (!group) {
                 await conn.rollback();
                 conn.release();
-                return { success: false, message: "Unable to fetch bank details" };
+                return { success: false, message: "Unable to fetch bank details group" };
             }
     
-            const bank = await this.getBankFromGroup(conn, group.id);
+            const bank = await this.getBankFromGroup(conn, group);
             if (!bank) {
                 await conn.rollback();
                 conn.release();
-                return { success: false, message: "Unable to fetch bank details" };
+                return { success: false, message: "Unable to fetch bank details bank" };
             }
     
             await this.updateConsumedAmount(conn, group.id, depositAmount);
@@ -223,6 +269,43 @@ class DepositModel {
     //         throw new Error('Failed to fetch bank account');
     //     }
     // }
+
+    static async resetBankSystem() {
+        const conn = await db.promise().getConnection();
+    
+        try {
+            await conn.beginTransaction();
+    
+            // 1. reset ranges
+            await conn.query(`
+                UPDATE tbl_bank_ranges
+                SET universal_group_active = 0,
+                    universal_group_active_date = NULL
+            `);
+    
+            // 2. reset groups
+            await conn.query(`
+                UPDATE tbl_bank_groups
+                SET consumed_amount = 0
+            `);
+    
+            // 3. reset bank rotation
+            await conn.query(`
+                UPDATE tbl_bank_group_accounts
+                SET is_chosen = 0
+            `);
+    
+            await conn.commit();
+            conn.release();
+    
+            return { success: true };
+    
+        } catch (err) {
+            await conn.rollback();
+            conn.release();
+            throw err;
+        }
+    }
 
     // Check if deposit ID exists with status 1
     static async getDepositById(depositId) {

@@ -21,6 +21,10 @@ class DepositService {
         return await depositModel.fetchBankAccountByValue(depositAmount);
     }
 
+    static async resetBankSystem() {
+        return await depositModel.resetBankSystem();
+    }
+
     // Save deposit for a user
     static async saveDeposit(userId, depositData, file) {
         try {
