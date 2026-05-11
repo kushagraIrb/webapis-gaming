@@ -75,6 +75,26 @@ class DepositController {
         }
     }
 
+    async resetBankSystem(req, res) {
+        try {
+            const result = await depositService.resetBankSystem();
+    
+            return res.status(200).send({
+                status: true,
+                message: 'Bank system reset successfully',
+                data: result
+            });
+    
+        } catch (error) {
+            console.error(error);
+            return res.status(500).send({
+                status: false,
+                message: 'Reset failed',
+                error: error.message
+            });
+        }
+    }
+
     // Save deposit for a user
     async saveDeposit(req, res) {
         try {
