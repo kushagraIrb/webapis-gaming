@@ -1,5 +1,6 @@
 const depositModel = require('../models/depositModel');
 const userModel = require('../models/userModel');
+const db = require('../config/database');
 
 class DepositService {
     // Fetch deposit history or count for a user
