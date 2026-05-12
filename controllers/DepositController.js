@@ -45,9 +45,7 @@ class DepositController {
             }
     
             const result = await depositService.getBankAccountByValue(depositAmount);
-    
-            console.log(result);
-    
+        
             // handle failure response
             if (!result?.success) {
                 return res.status(400).send({

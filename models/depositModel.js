@@ -220,7 +220,10 @@ class DepositModel {
     
             return {
                 success: true,
-                data: bank
+                data: {
+                    ...bank,
+                    group_id: group.id
+                }
             };
     
         } catch (err) {
