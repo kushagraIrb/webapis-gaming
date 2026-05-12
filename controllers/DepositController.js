@@ -103,7 +103,7 @@ class DepositController {
         } catch (error) {
             logger.error(`Error saving deopsit: ${error.message}`, { stack: error.stack });
             
-            return res.status(500).send({
+            return res.status(error.statusCode || 500).send({
                 status: false,
                 message: error.message,
             });

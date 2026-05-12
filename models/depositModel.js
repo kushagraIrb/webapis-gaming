@@ -87,10 +87,7 @@ class DepositModel {
         );
     
         for (const group of groups) {
-    
-            const remaining =
-                parseFloat(group.max_daily_amount) -
-                parseFloat(group.consumed_amount);
+            const remaining = parseFloat(group.max_daily_amount) - parseFloat(group.consumed_amount);
     
             if (parseFloat(depositAmount) <= remaining) {
                 return group;
@@ -177,13 +174,22 @@ class DepositModel {
         return bank;
     }
 
-    static async updateConsumedAmount(conn, group_id, depositAmount) {
-        await conn.query(
-            `UPDATE tbl_bank_groups 
-            SET consumed_amount = consumed_amount + ? 
-            WHERE id = ?`,
-            [depositAmount, group_id]
-        );
+    static async updateConsumedAmount(conn, groupId, amount) {
+        const query = `
+            UPDATE tbl_bank_groups
+            SET consumed_amount = consumed_amount + ?
+            WHERE id = ?
+            AND is_active = 1
+            AND (max_daily_amount - consumed_amount) >= ?
+        `;
+
+        const [result] = await conn.query(query, [
+            amount,
+            groupId,
+            amount
+        ]);
+
+        return result.affectedRows > 0;
     }
 
     static async fetchBankAccountByValue(depositAmount) {
@@ -213,7 +219,7 @@ class DepositModel {
                 return { success: false, message: "Unable to fetch bank details bank" };
             }
     
-            await this.updateConsumedAmount(conn, group.id, depositAmount);
+            // await this.updateConsumedAmount(conn, group.id, depositAmount);
     
             await conn.commit();
             conn.release();
@@ -323,29 +329,19 @@ class DepositModel {
     }
 
     // Save deposit
-    static async saveDeposit(data) {
-        // Get the current time in IST
+    static async saveDeposit(conn, data) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `INSERT INTO tbl_deposit_list (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, deposit_screenshot, bank_owner_name, status, user_id, approved_date) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`;
-        const values = [
-            data.deposit_id,
-            data.deposit_amount,
-            data.deposit_amount_step1,
-            data.deposit_date,
-            data.deposit_screenshot,
-            data.bank_owner_name,
-            data.userId,
-            istTime
-        ];
+        const query = `
+            INSERT INTO tbl_deposit_list
+            (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, deposit_screenshot, bank_owner_name, status, user_id, approved_date)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `;
 
-        try {
-            const [result] = await db.promise().query(query, values);
-            return result;
-        } catch (error) {
-            console.error('Error saving deposit:', error.message);
-            throw new Error('Failed to save deposit data to the database');
-        }
+        const values = [data.deposit_id, data.deposit_amount, data.deposit_amount_step1, data.deposit_date, data.deposit_screenshot, data.bank_owner_name, data.userId, istTime];
+
+        const [result] = await conn.query(query, values);
+        return result;
     }
 
     // Get user available balance
@@ -361,40 +357,27 @@ class DepositModel {
     }
 
     // Save transaction history
-    static async saveTransactionHistory(data) {
-        // Get the current time in IST
+    static async saveTransactionHistory(conn, data) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `INSERT INTO tbl_transaction_history (transaction_pk, transaction_id, user_id, credit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id) VALUES (?, ?, ?, ?, ?, 'Credit', 'Deposit', ?, ?)`;
-        const values = [
-            data.transaction_pk,
-            data.transaction_id,
-            data.userId,
-            data.credit_amount,
-            data.total_amount,
-            istTime,
-            data.bonus_league_id
-        ];
+        const query = `
+            INSERT INTO tbl_transaction_history
+            (transaction_pk, transaction_id, user_id, credit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id)
+            VALUES (?, ?, ?, ?, ?, 'Credit', 'Deposit', ?, ?)
+        `;
 
-        try {
-            const [result] = await db.promise().query(query, values);
-            return result;
-        } catch (error) {
-            console.error('Error saving transaction history:', error.message);
-            throw new Error('Failed to save transaction history to the database');
-        }
+        const values = [data.transaction_pk, data.transaction_id, data.userId, data.credit_amount, data.total_amount, istTime, data.bonus_league_id];
+
+        const [result] = await conn.query(query, values);
+        return result;
     }
 
     // Update user highlight row
-    static async updateUserHighlight(userId) {
+    static async updateUserHighlight(conn, userId) {
         const query = `UPDATE tbl_registration SET highlight_row = 0 WHERE id = ?`;
-        try {
-            const [result] = await db.promise().query(query, [userId]);
-            return result;
-        } catch (error) {
-            console.error('Error updating user highlight row:', error.message);
-            throw new Error('Failed to update user highlight row in the database');
-        }
+
+        const [result] = await conn.query(query, [userId]);
+        return result;
     }
 
     // Save deposit log

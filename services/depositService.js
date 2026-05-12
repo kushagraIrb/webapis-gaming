@@ -27,12 +27,15 @@ class DepositService {
 
     // Save deposit for a user
     static async saveDeposit(userId, depositData, file) {
+        const conn = await db.promise().getConnection();
+
         try {
-            const { deposit_id, deposit_amount, deposit_amount_step1, deposit_date, bank_owner_name
-            } = depositData;
-            
+            await conn.beginTransaction();
+
+            const { deposit_id,deposit_amount,deposit_amount_step1,deposit_date,bank_owner_name,group_id } = depositData;
+
             // Validate required fields
-            if (!deposit_id || !deposit_amount || !deposit_amount_step1 || !deposit_date || !bank_owner_name) {
+            if ( !deposit_id ||!deposit_amount ||!deposit_amount_step1 ||!deposit_date ||!bank_owner_name ||!group_id) {
                 const err = new Error('Some data is missing.');
                 err.statusCode = 400;
                 throw err;
@@ -42,9 +45,19 @@ class DepositService {
 
             // Check if deposit ID already exists with status 1
             const existingDeposit = await depositModel.getDepositById(deposit_id);
+
             if (existingDeposit) {
                 const err = new Error('This screenshot has already been approved. Please try again with a different screenshot.');
                 err.statusCode = 409;
+                throw err;
+            }
+
+            // Atomic consumed amount update
+            const updated = await depositModel.updateConsumedAmount(conn, group_id, deposit_amount);
+
+            if (!updated) {
+                const err = new Error('Please refresh the page and try again.');
+                err.statusCode = 400;
                 throw err;
             }
 
@@ -60,42 +73,49 @@ class DepositService {
             };
 
             // Save deposit
-            const result = await depositModel.saveDeposit(data);
+            const result = await depositModel.saveDeposit(conn, data);
 
-            if (result) {
-                // Fetch bonus_league_id
-                const bonusData = await userModel.getBonusIdByUserId(userId);
-                const bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
-
-                // Calculate user balance
-                const availableBalance = await depositModel.getUserAvailableBalance(userId);
-                const totalBalance = parseFloat(deposit_amount_step1) + parseFloat(availableBalance || 0);
-
-                const transData = {
-                    transaction_pk: result.insertId,
-                    transaction_id: deposit_id,
-                    userId,
-                    credit_amount: deposit_amount_step1,
-                    total_amount: totalBalance,
-                    bonus_league_id
-                };
-
-                // Add transaction history
-                await depositModel.saveTransactionHistory(transData);
-
-                // Update user registration highlight
-                await depositModel.updateUserHighlight(userId);
-
-                return {
-                    status: true,
-                    message: 'Deposit saved successfully and added to the wallet.',
-                };
-            } else {
-                throw new Error('Something went wrong, please try again.');
+            if (!result) {
+                const err = new Error('Something went wrong, please try again.');
+                err.statusCode = 500;
+                throw err;
             }
+
+            // Fetch bonus league
+            const bonusData = await userModel.getBonusIdByUserId(userId);
+
+            const bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
+
+            // Get user balance
+            const availableBalance = await depositModel.getUserAvailableBalance(userId);
+
+            const totalBalance = parseFloat(deposit_amount_step1) + parseFloat(availableBalance || 0);
+
+            const transData = {
+                transaction_pk: result.insertId,
+                transaction_id: deposit_id,
+                userId,
+                credit_amount: deposit_amount_step1,
+                total_amount: totalBalance,
+                bonus_league_id
+            };
+
+            // Save transaction history
+            await depositModel.saveTransactionHistory(conn, transData);
+            // Update highlight
+            await depositModel.updateUserHighlight(conn, userId);
+            await conn.commit();
+
+            return {
+                status: true,
+                message: 'Deposit saved successfully and added to the wallet.',
+            };
         } catch (error) {
+            await conn.rollback();
             console.error('Error saving deposit:', error.message);
             throw error;
+        } finally {
+            conn.release();
         }
     }
 
