@@ -71,9 +71,13 @@ class DepositController {
 
             return res.status(200).send(result);
         } catch (error) {
-            logger.error(`Error saving deopsit: ${error.message}`, { stack: error.stack });
-            
-            return res.status(500).send({
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error saving deopsit: ${error.message}`, { stack: error.stack });
+            }
+
+            return res.status(statusCode).send({
                 status: false,
                 message: error.message,
             });
@@ -97,6 +101,25 @@ class DepositController {
             return res.status(statusCode).send({
                 status: false,
                 message: error.message || 'Something went wrong',
+            });
+        }
+    }
+
+    async getPendingRequestsCount(req, res) {
+        try {
+            const userId = req.user_id;
+
+            if (!userId) {
+                return res.status(400).json({ status: false, message: 'User ID is required' });
+            }
+
+            const result = await depositService.getPendingRequestsCount(userId);
+            return res.status(200).json({ status: true, pending_requests_count: result });
+        } catch (error) {
+            logger.error(`Error fetching pending deposit requests count: ${error.message}`, { stack: error.stack });
+            return res.status(500).json({
+                status: false,
+                message: 'Something went wrong, please try again.',
             });
         }
     }
