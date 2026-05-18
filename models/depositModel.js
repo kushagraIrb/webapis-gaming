@@ -330,7 +330,15 @@ class DepositModel {
 
     // Check if user has pending deposit request
     static async findPendingDepositByUserId(userId) {
-        const query = `SELECT deposit_id FROM tbl_deposit_list WHERE user_id = ? AND status = 1 LIMIT 1`;
+        const query = `
+            SELECT deposit_id
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+              AND status = 1
+              AND COALESCE(verified, 0) = 0
+              AND COALESCE(fake_deposit, 0) = 0
+            LIMIT 1
+        `;
         try {
             const [rows] = await db.promise().query(query, [userId]);
             return rows.length > 0 ? rows[0] : null;
@@ -342,7 +350,14 @@ class DepositModel {
 
     // Fetch pending deposit requests count (0/1 style like withdrawal API)
     static async fetchPendingRequestsCount(userId) {
-        const query = `SELECT COUNT(*) AS pendingCount FROM tbl_deposit_list WHERE user_id = ? AND status = 1`;
+        const query = `
+            SELECT COUNT(*) AS pendingCount
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+              AND status = 1
+              AND COALESCE(verified, 0) = 0
+              AND COALESCE(fake_deposit, 0) = 0
+        `;
         try {
             const [rows] = await db.promise().query(query, [userId]);
             return rows[0]?.pendingCount || 0;
@@ -379,6 +394,47 @@ class DepositModel {
         } catch (error) {
             console.error('Error fetching first 24h deposit total:', error.message);
             throw new Error('Failed to fetch first 24h deposit total from the database');
+        }
+    }
+
+    // Debug helper to inspect how pending deposit rows are being classified
+    static async getPendingDepositDiagnostics(userId) {
+        try {
+            const statusCountQuery = `
+                SELECT
+                    COUNT(*) AS total_rows,
+                    SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS status_1_rows,
+                    SUM(CASE WHEN status = 1 AND COALESCE(verified, 0) = 0 AND COALESCE(fake_deposit, 0) = 0 THEN 1 ELSE 0 END) AS pending_by_rule_rows
+                FROM tbl_deposit_list
+                WHERE user_id = ?
+            `;
+
+            const rowsPreviewQuery = `
+                SELECT
+                    id,
+                    deposit_id,
+                    deposit_amount_step1,
+                    status,
+                    COALESCE(verified, 0) AS verified,
+                    COALESCE(fake_deposit, 0) AS fake_deposit,
+                    approved_date,
+                    deposit_date
+                FROM tbl_deposit_list
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT 20
+            `;
+
+            const [countRows] = await db.promise().query(statusCountQuery, [userId]);
+            const [previewRows] = await db.promise().query(rowsPreviewQuery, [userId]);
+
+            return {
+                summary: countRows[0] || {},
+                latest_rows: previewRows || [],
+            };
+        } catch (error) {
+            console.error('Error fetching deposit diagnostics:', error.message);
+            throw new Error('Failed to fetch deposit diagnostics from the database');
         }
     }
 

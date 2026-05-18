@@ -153,6 +153,25 @@ class DepositController {
             });
         }
     }
+
+    async getPendingDepositDiagnostics(req, res) {
+        try {
+            const userId = req.user_id;
+
+            if (!userId) {
+                return res.status(400).json({ status: false, message: 'User ID is required' });
+            }
+
+            const result = await depositService.getPendingDepositDiagnostics(userId);
+            return res.status(200).json({ status: true, data: result });
+        } catch (error) {
+            logger.error(`Error fetching pending deposit diagnostics: ${error.message}`, { stack: error.stack });
+            return res.status(500).json({
+                status: false,
+                message: 'Something went wrong, please try again.',
+            });
+        }
+    }
 }
 
 module.exports = new DepositController();

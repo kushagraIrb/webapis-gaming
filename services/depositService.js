@@ -193,6 +193,15 @@ class DepositService {
             throw error;
         }
     }
+
+    static async getPendingDepositDiagnostics(userId) {
+        try {
+            return await depositModel.getPendingDepositDiagnostics(userId);
+        } catch (error) {
+            console.error('Error fetching pending deposit diagnostics:', error.message);
+            throw error;
+        }
+    }
 }
 
 module.exports = DepositService;
