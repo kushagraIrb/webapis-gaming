@@ -68,12 +68,16 @@ class DepositService {
 
             const deposit_screenshot = file ? file.filename : null;
 
-            // Block duplicate deposit requests while a previous one is pending
-            const existingPendingDeposit = await depositModel.findPendingDepositByUserId(userId);
-            if (existingPendingDeposit) {
-                const err = new Error('Your previous deposit is pending. Please wait for admin approval before making another deposit.');
-                err.statusCode = 409;
-                throw err;
+            // First-deposit gate:
+            // Until the user has their first approved deposit, do not allow another while pending exists.
+            const hasApprovedDeposit = await depositModel.hasApprovedDeposit(userId);
+            if (!hasApprovedDeposit) {
+                const existingPendingDeposit = await depositModel.findPendingDepositByUserId(userId);
+                if (existingPendingDeposit) {
+                    const err = new Error('Your previous deposit is pending. Please wait for admin approval before making another deposit.');
+                    err.statusCode = 409;
+                    throw err;
+                }
             }
 
             // Check if deposit ID already exists with status 1
@@ -190,6 +194,15 @@ class DepositService {
             return await depositModel.fetchPendingRequestsCount(userId);
         } catch (error) {
             console.error('Error fetching pending deposit requests count:', error.message);
+            throw error;
+        }
+    }
+
+    static async getPendingDepositDiagnostics(userId) {
+        try {
+            return await depositModel.getPendingDepositDiagnostics(userId);
+        } catch (error) {
+            console.error('Error fetching pending deposit diagnostics:', error.message);
             throw error;
         }
     }
