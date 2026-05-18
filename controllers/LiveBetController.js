@@ -584,7 +584,7 @@ class LiveBetController {
 
             // Step 5: Fetch Wallet and bet amount
             const walletAmount = parseFloat(await liveBetService.calculateWalletAmount(userId)) || 0;
-            const betAmount = parseFloat(await liveBetService.getBetAmount(bet_id));
+            const betAmount = parseFloat(await liveBetService.getBetAmount(userId, bet_id, match_id));
             let totalWalletAmount = walletAmount + betAmount;
 
             // Step 6: Cancel Charge after 5 Times Cancellation

@@ -2,7 +2,7 @@ const { logger } = require('../logger');
 const coinFlipService = require('../services/coinFlipService');
 const liveBetService = require('../services/liveBetService');
 const fs = require('fs');
-
+const moment = require('moment-timezone');
 require('dotenv').config();
 
 class CoinFlipController {
@@ -237,42 +237,89 @@ class CoinFlipController {
         }
     }
 
-    // Give winning to the users who all won
     async createWinner(req, res) { 
-        console.log('createWinner API called');
-    
-        let matchResult = null;
-    
+        
+        // console.log("🚀 API HIT (IST):", moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"));
+
+        let shouldCreateNextMatch = false;
+
         try {
             const token = req.query.token || req.headers['x-auth-token'];
-    
+
             if (token !== process.env.COINFLIP_SECRET_KEY) {
                 return res.status(403).json({ message: 'Unauthorized request' });
             }
-    
-            matchResult = await coinFlipService.getEligibleMatch();
-    
-            if (!matchResult) {
-                return res.status(200).send({ message: 'No eligible match to process.' });
+
+            // Step 1: Get current match
+            const currentMatch = await coinFlipService.currentCoinFlipMatch();
+            // console.log("🎯 Current Match FULL:", currentMatch);
+
+            if (!currentMatch) {
+                return res.status(200).json({ message: "No active match found" });
             }
-    
-            await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
-    
-            return res.status(200).send('Match result processed and winnings distributed.');
-    
+
+            const now = moment.tz("Asia/Kolkata");
+
+            // ✅ Combine match_date + match_time
+            const matchDateTime = moment.tz(
+                `${moment(currentMatch.match_date).format("YYYY-MM-DD")} ${currentMatch.match_time}`,
+                "YYYY-MM-DD HH:mm:ss",
+                "Asia/Kolkata"
+            );
+
+            // console.log("🕒 Match End:", matchDateTime.format("YYYY-MM-DD HH:mm:ss"));
+            // console.log("🕒 Current Time:", now.format("YYYY-MM-DD HH:mm:ss"));
+
+            if (!matchDateTime.isValid()) {
+                return res.status(500).json({ message: "Invalid match time" });
+            }
+
+            // ❌ If match still running → STOP
+            const bufferSeconds = 5;
+
+            if (now.isBefore(matchDateTime.clone().subtract(bufferSeconds, 'seconds'))) {
+                console.log("⏳ Match still running → skip");
+
+                return res.status(200).json({
+                    message: "Match not finished yet"
+                });
+            }
+
+            // ✅ Match finished → proceed
+            // console.log("✅ Match finished → processing");
+
+            shouldCreateNextMatch = true;
+
+            // Step 2: Winner logic
+            const matchResult = await coinFlipService.getEligibleMatch();
+
+            if (matchResult) {
+                try {
+                    // console.log("✅ Giving winnings...");
+                    await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
+                } catch (err) {
+                    console.error("❌ Winnings failed:", err.message);
+                }
+            } else {
+                console.log("⚠️ No eligible match found");
+            }
+
+            return res.status(200).send('Match processed');
+
         } catch (error) {
             console.error('Error in createWinner:', error.message);
-            logger.error(`Error in create winner API: ${error.message}`, { stack: error.stack });
-    
+
             return res.status(500).send({ msg: 'Error occurred', error: error.message });
-    
+
         } finally {
-            try {
-                console.log('Ensuring next game creation...');
-                await coinFlipService.createGame();
-            } catch (err) {
-                console.error('Critical: createGame failed:', err.message);
-                logger.error('createGame failed in finally block', { stack: err.stack });
+            // ✅ Only after match finished
+            if (shouldCreateNextMatch) {
+                try {
+                    // console.log("🔁 Creating next match...");
+                    await coinFlipService.createGame();
+                } catch (err) {
+                    console.error("❌ createGame failed:", err.message);
+                }
             }
         }
     }

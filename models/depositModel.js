@@ -31,39 +31,288 @@ class DepositModel {
     }
 
     // Fetch Admin Bank Account based on the deposit amount
-    static async fetchBankAccountByValue(depositAmount) {
-        try {
-            // Initial query to find a matching bank account
-            let query = `SELECT * FROM tbl_bank_details WHERE ? BETWEEN min_value AND max_value AND status = 1 AND chosen_flag = 0 ORDER BY id ASC LIMIT 1`;
-            
-            const [rows] = await db.promise().query(query, [parseFloat(depositAmount)]);
+    static async getRange(conn, depositAmount) {
+        const [rows] = await conn.query(
+            `SELECT * FROM tbl_bank_ranges 
+             WHERE ? BETWEEN min_amount AND max_amount 
+             AND status = 1 
+             LIMIT 1`,
+            [depositAmount]
+        );
+    
+        return rows[0];
+    }
+    
+    static async getEligibleGroup(conn, range_id, depositAmount) {
+        const today = moment().format('YYYY-MM-DD');
+        
+        // 1. GET RANGE DETAILS
+        const [rangeRows] = await conn.query(`SELECT * FROM tbl_bank_ranges WHERE id = ? LIMIT 1`, [range_id]);
+    
+        const range = rangeRows[0];
+    
+        if (!range) {
+            return null;
+        }
+    
+        // 2. FORMAT UNIVERSAL ACTIVE DATE
+        const universalDate = range.universal_group_active_date
+            ? moment(range.universal_group_active_date).format('YYYY-MM-DD')
+            : null;
 
-            let data = rows[0];
-
-            // If no matching bank account is found, reset chosen_flag and try again
-            if (!data) {
-                const resetQuery = `UPDATE tbl_bank_details SET chosen_flag = 0 WHERE ? BETWEEN min_value AND max_value`;
-                await db.promise().query(resetQuery, [parseFloat(depositAmount)]);
-
-                // Retry the query after resetting chosen_flag
-                const [retryRows] = await db.promise().query(query, [parseFloat(depositAmount)]);
-                data = retryRows[0];
-
-                // If a matching bank account is found after resetting, update its chosen_flag
-                if (data) {
-                    const updateQuery = `UPDATE tbl_bank_details SET chosen_flag = 1 WHERE id = ?`;
-                    await db.promise().query(updateQuery, [data.id]);
-                }
-            } else {
-                // If a matching bank account is found on the first attempt, update its chosen_flag
-                const updateQuery = `UPDATE tbl_bank_details SET chosen_flag = 1 WHERE id = ?`;
-                await db.promise().query(updateQuery, [data.id]);
+        // 3. RESET UNIVERSAL FLAG IF OLD DATE
+        if (range.universal_group_active == 1 && universalDate !== today) {
+            await conn.query(`UPDATE tbl_bank_ranges SET universal_group_active = 0 WHERE id = ?`, [range_id]);
+            range.universal_group_active = 0;
+        }
+    
+        // 4. UNIVERSAL GROUP ACTIVE TODAY
+        if (range.universal_group_active == 1 && universalDate === today) {
+            const [universal] = await conn.query(
+                `SELECT * FROM tbl_bank_groups
+                 WHERE range_id = ? AND priority = 0 AND is_active = 1
+                 LIMIT 1`,
+                [range_id]
+            );
+    
+            return universal[0] || null;
+        }
+    
+        // 5. NORMAL GROUP FLOW
+        const [groups] = await conn.query(
+            `SELECT * FROM tbl_bank_groups
+             WHERE range_id = ? AND priority > 0 AND is_active = 1
+             ORDER BY priority ASC`,
+            [range_id]
+        );
+    
+        for (const group of groups) {
+            const remaining = parseFloat(group.max_daily_amount) - parseFloat(group.consumed_amount);
+    
+            if (parseFloat(depositAmount) <= remaining) {
+                return group;
             }
+        }
+    
+        // 6. ACTIVATE UNIVERSAL GROUP
+        await conn.query(
+            `UPDATE tbl_bank_ranges
+             SET universal_group_active = 1,
+                 universal_group_active_date = CURDATE()
+             WHERE id = ?`,
+            [range_id]
+        );
+    
+        const [universal] = await conn.query(
+            `SELECT * 
+             FROM tbl_bank_groups
+             WHERE range_id = ?
+             AND priority = 0
+             AND is_active = 1
+             LIMIT 1`,
+            [range_id]
+        );
+    
+        return universal[0] || null;
+    }
+    
+    static async getBankFromGroup(conn, group) {
+        const remainingGroupAmount = parseFloat(group.max_daily_amount) - parseFloat(group.consumed_amount);
+    
+        // 1. try unused bank
+        let [accounts] = await conn.query(
+            `SELECT bd.*, bga.bank_id
+             FROM tbl_bank_group_accounts bga
+             JOIN tbl_bank_details bd
+                ON bd.id = bga.bank_id
+             WHERE bga.group_id = ?
+             AND bga.is_chosen = 0
+             AND bd.status = 1
+             ORDER BY bd.id ASC
+             LIMIT 1
+             FOR UPDATE`,
+            [group.id]
+        );
+    
+        let bank = accounts[0];
+    
+        // 2. RESET ONLY IF GROUP STILL ACTIVE
+        if (!bank && remainingGroupAmount > 0) {
+            await conn.query(
+                `UPDATE tbl_bank_group_accounts
+                 SET is_chosen = 0
+                 WHERE group_id = ?
+                 AND is_chosen = 1`,
+                [group.id]
+            );
+    
+            [accounts] = await conn.query(
+                `SELECT bd.*, bga.bank_id
+                 FROM tbl_bank_group_accounts bga
+                 JOIN tbl_bank_details bd
+                    ON bd.id = bga.bank_id
+                 WHERE bga.group_id = ?
+                 AND bd.status = 1
+                 ORDER BY bd.id ASC
+                 LIMIT 1`,
+                [group.id]
+            );
+    
+            bank = accounts[0];
+        }
+    
+        if (!bank) return null;
+    
+        await conn.query(
+            `UPDATE tbl_bank_group_accounts
+             SET is_chosen = 1
+             WHERE group_id = ?
+             AND bank_id = ?`,
+            [group.id, bank.bank_id]
+        );
+    
+        return bank;
+    }
 
-            return data;
-        } catch (error) {
-            console.error('Error fetching bank account by value:', error.message);
-            throw new Error('Failed to fetch bank account');
+    static async updateConsumedAmount(conn, groupId, amount) {
+        const query = `
+            UPDATE tbl_bank_groups
+            SET consumed_amount = consumed_amount + ?
+            WHERE id = ?
+            AND is_active = 1
+            AND (max_daily_amount - consumed_amount) >= ?
+        `;
+
+        const [result] = await conn.query(query, [
+            amount,
+            groupId,
+            amount
+        ]);
+
+        return result.affectedRows > 0;
+    }
+
+    static async fetchBankAccountByValue(depositAmount) {
+        const conn = await db.promise().getConnection();
+    
+        try {
+            await conn.beginTransaction();
+    
+            const range = await this.getRange(conn, depositAmount);
+            if (!range) {
+                await conn.rollback();
+                conn.release();
+                return { success: false, message: "Unable to fetch bank details (range)" };
+            }
+    
+            const group = await this.getEligibleGroup(conn, range.id, depositAmount);
+            if (!group) {
+                await conn.rollback();
+                conn.release();
+                return { success: false, message: "Unable to fetch bank details group" };
+            }
+    
+            const bank = await this.getBankFromGroup(conn, group);
+            if (!bank) {
+                await conn.rollback();
+                conn.release();
+                return { success: false, message: "Unable to fetch bank details bank" };
+            }
+    
+            // await this.updateConsumedAmount(conn, group.id, depositAmount);
+    
+            await conn.commit();
+            conn.release();
+    
+            return {
+                success: true,
+                data: {
+                    ...bank,
+                    group_id: group.id
+                }
+            };
+    
+        } catch (err) {
+            await conn.rollback();
+            conn.release();
+    
+            return {
+                success: false,
+                message: "Unable to fetch bank details"
+            };
+        }
+    }
+
+    // static async fetchBankAccountByValue(depositAmount) {
+    //     try {
+    //         // Initial query to find a matching bank account
+    //         let query = `SELECT * FROM tbl_bank_details WHERE ? BETWEEN min_value AND max_value AND status = 1 AND chosen_flag = 0 ORDER BY id ASC LIMIT 1`;
+            
+    //         const [rows] = await db.promise().query(query, [parseFloat(depositAmount)]);
+
+    //         let data = rows[0];
+
+    //         // If no matching bank account is found, reset chosen_flag and try again
+    //         if (!data) {
+    //             const resetQuery = `UPDATE tbl_bank_details SET chosen_flag = 0 WHERE ? BETWEEN min_value AND max_value`;
+    //             await db.promise().query(resetQuery, [parseFloat(depositAmount)]);
+
+    //             // Retry the query after resetting chosen_flag
+    //             const [retryRows] = await db.promise().query(query, [parseFloat(depositAmount)]);
+    //             data = retryRows[0];
+
+    //             // If a matching bank account is found after resetting, update its chosen_flag
+    //             if (data) {
+    //                 const updateQuery = `UPDATE tbl_bank_details SET chosen_flag = 1 WHERE id = ?`;
+    //                 await db.promise().query(updateQuery, [data.id]);
+    //             }
+    //         } else {
+    //             // If a matching bank account is found on the first attempt, update its chosen_flag
+    //             const updateQuery = `UPDATE tbl_bank_details SET chosen_flag = 1 WHERE id = ?`;
+    //             await db.promise().query(updateQuery, [data.id]);
+    //         }
+
+    //         return data;
+    //     } catch (error) {
+    //         console.error('Error fetching bank account by value:', error.message);
+    //         throw new Error('Failed to fetch bank account');
+    //     }
+    // }
+
+    static async resetBankSystem() {
+        const conn = await db.promise().getConnection();
+    
+        try {
+            await conn.beginTransaction();
+    
+            // 1. reset ranges
+            await conn.query(`
+                UPDATE tbl_bank_ranges
+                SET universal_group_active = 0,
+                    universal_group_active_date = NULL
+            `);
+    
+            // 2. reset groups
+            await conn.query(`
+                UPDATE tbl_bank_groups
+                SET consumed_amount = 0
+            `);
+    
+            // 3. reset bank rotation
+            await conn.query(`
+                UPDATE tbl_bank_group_accounts
+                SET is_chosen = 0
+            `);
+    
+            await conn.commit();
+            conn.release();
+    
+            return { success: true };
+    
+        } catch (err) {
+            await conn.rollback();
+            conn.release();
+            throw err;
         }
     }
 
@@ -134,29 +383,19 @@ class DepositModel {
     }
 
     // Save deposit
-    static async saveDeposit(data) {
-        // Get the current time in IST
+    static async saveDeposit(conn, data) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `INSERT INTO tbl_deposit_list (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, deposit_screenshot, bank_owner_name, status, user_id, approved_date) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`;
-        const values = [
-            data.deposit_id,
-            data.deposit_amount,
-            data.deposit_amount_step1,
-            data.deposit_date,
-            data.deposit_screenshot,
-            data.bank_owner_name,
-            data.userId,
-            istTime
-        ];
+        const query = `
+            INSERT INTO tbl_deposit_list
+            (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, deposit_screenshot, bank_owner_name, status, user_id, approved_date)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `;
 
-        try {
-            const [result] = await db.promise().query(query, values);
-            return result;
-        } catch (error) {
-            console.error('Error saving deposit:', error.message);
-            throw new Error('Failed to save deposit data to the database');
-        }
+        const values = [data.deposit_id, data.deposit_amount, data.deposit_amount_step1, data.deposit_date, data.deposit_screenshot, data.bank_owner_name, data.userId, istTime];
+
+        const [result] = await conn.query(query, values);
+        return result;
     }
 
     // Get user available balance
@@ -172,40 +411,27 @@ class DepositModel {
     }
 
     // Save transaction history
-    static async saveTransactionHistory(data) {
-        // Get the current time in IST
+    static async saveTransactionHistory(conn, data) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `INSERT INTO tbl_transaction_history (transaction_pk, transaction_id, user_id, credit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id) VALUES (?, ?, ?, ?, ?, 'Credit', 'Deposit', ?, ?)`;
-        const values = [
-            data.transaction_pk,
-            data.transaction_id,
-            data.userId,
-            data.credit_amount,
-            data.total_amount,
-            istTime,
-            data.bonus_league_id
-        ];
+        const query = `
+            INSERT INTO tbl_transaction_history
+            (transaction_pk, transaction_id, user_id, credit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id)
+            VALUES (?, ?, ?, ?, ?, 'Credit', 'Deposit', ?, ?)
+        `;
 
-        try {
-            const [result] = await db.promise().query(query, values);
-            return result;
-        } catch (error) {
-            console.error('Error saving transaction history:', error.message);
-            throw new Error('Failed to save transaction history to the database');
-        }
+        const values = [data.transaction_pk, data.transaction_id, data.userId, data.credit_amount, data.total_amount, istTime, data.bonus_league_id];
+
+        const [result] = await conn.query(query, values);
+        return result;
     }
 
     // Update user highlight row
-    static async updateUserHighlight(userId) {
+    static async updateUserHighlight(conn, userId) {
         const query = `UPDATE tbl_registration SET highlight_row = 0 WHERE id = ?`;
-        try {
-            const [result] = await db.promise().query(query, [userId]);
-            return result;
-        } catch (error) {
-            console.error('Error updating user highlight row:', error.message);
-            throw new Error('Failed to update user highlight row in the database');
-        }
+
+        const [result] = await conn.query(query, [userId]);
+        return result;
     }
 
     // Save deposit log

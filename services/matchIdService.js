@@ -198,9 +198,18 @@ class MatchIdService {
         }
     }
     
-    static async cancelTransferRequest(transfer_id) {
+    // static async cancelTransferRequest(transfer_id) {
+    //     try {
+    //         return await matchIdModel.cancelTransferRequest(transfer_id );
+    //     } catch (error) {
+    //         console.error('Error in Support Message Service:', error.message);
+    //         throw new Error('Failed to send support message');
+    //     }
+    // }
+
+    static async cancelTransferRequest(transfer_id,rejection_reason) {
         try {
-            return await matchIdModel.cancelTransferRequest(transfer_id );
+            return await matchIdModel.cancelTransferRequest(transfer_id,rejection_reason );
         } catch (error) {
             console.error('Error in Support Message Service:', error.message);
             throw new Error('Failed to send support message');
