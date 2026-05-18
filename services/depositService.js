@@ -42,7 +42,39 @@ class DepositService {
                 throw err;
             }
 
+            const newDepositAmount = parseFloat(deposit_amount_step1);
+            if (isNaN(newDepositAmount) || newDepositAmount <= 0) {
+                const err = new Error('Invalid deposit amount.');
+                err.statusCode = 400;
+                throw err;
+            }
+
+            // Enforce first-24h total deposit limit for newly registered users
+            const userCreatedAt = await depositModel.getUserCreatedAt(userId);
+            if (userCreatedAt) {
+                const userCreatedMs = new Date(userCreatedAt).getTime();
+                const first24hEndsMs = userCreatedMs + (24 * 60 * 60 * 1000);
+                const nowMs = Date.now();
+
+                if (nowMs <= first24hEndsMs) {
+                    const first24hTotal = await depositModel.getFirst24hDepositTotal(userId, userCreatedAt);
+                    if ((first24hTotal + newDepositAmount) > 10000) {
+                        const err = new Error('First 24 hours total deposit limit is Rs. 10,000.');
+                        err.statusCode = 422;
+                        throw err;
+                    }
+                }
+            }
+
             const deposit_screenshot = file ? file.filename : null;
+
+            // Block duplicate deposit requests while a previous one is pending
+            const existingPendingDeposit = await depositModel.findPendingDepositByUserId(userId);
+            if (existingPendingDeposit) {
+                const err = new Error('Your previous deposit is pending. Please wait for admin approval before making another deposit.');
+                err.statusCode = 409;
+                throw err;
+            }
 
             // Check if deposit ID already exists with status 1
             const existingDeposit = await depositModel.getDepositById(deposit_id);
@@ -149,6 +181,15 @@ class DepositService {
             };
         } catch (error) {
             console.error('Error saving deposit:', error.message);
+            throw error;
+        }
+    }
+
+    static async getPendingRequestsCount(userId) {
+        try {
+            return await depositModel.fetchPendingRequestsCount(userId);
+        } catch (error) {
+            console.error('Error fetching pending deposit requests count:', error.message);
             throw error;
         }
     }

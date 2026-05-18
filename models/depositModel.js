@@ -328,6 +328,60 @@ class DepositModel {
         }
     }
 
+    // Check if user has pending deposit request
+    static async findPendingDepositByUserId(userId) {
+        const query = `SELECT deposit_id FROM tbl_deposit_list WHERE user_id = ? AND status = 1 LIMIT 1`;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0 ? rows[0] : null;
+        } catch (error) {
+            console.error('Error fetching pending deposit:', error.message);
+            throw new Error('Failed to fetch pending deposit data from the database');
+        }
+    }
+
+    // Fetch pending deposit requests count (0/1 style like withdrawal API)
+    static async fetchPendingRequestsCount(userId) {
+        const query = `SELECT COUNT(*) AS pendingCount FROM tbl_deposit_list WHERE user_id = ? AND status = 1`;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows[0]?.pendingCount || 0;
+        } catch (error) {
+            console.error('Error fetching pending deposit count:', error.message);
+            throw new Error('Failed to fetch pending deposit count from the database');
+        }
+    }
+
+    // Fetch user registration created timestamp
+    static async getUserCreatedAt(userId) {
+        const query = `SELECT created FROM tbl_registration WHERE id = ? LIMIT 1`;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0 ? rows[0].created : null;
+        } catch (error) {
+            console.error('Error fetching user created timestamp:', error.message);
+            throw new Error('Failed to fetch user registration timestamp from the database');
+        }
+    }
+
+    // Sum user deposits created in first 24h window after registration
+    static async getFirst24hDepositTotal(userId, userCreatedAt) {
+        const query = `
+            SELECT COALESCE(SUM(deposit_amount_step1), 0) AS total
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+              AND approved_date >= ?
+              AND approved_date <= DATE_ADD(?, INTERVAL 24 HOUR)
+        `;
+        try {
+            const [rows] = await db.promise().query(query, [userId, userCreatedAt, userCreatedAt]);
+            return parseFloat(rows[0]?.total || 0);
+        } catch (error) {
+            console.error('Error fetching first 24h deposit total:', error.message);
+            throw new Error('Failed to fetch first 24h deposit total from the database');
+        }
+    }
+
     // Save deposit
     static async saveDeposit(conn, data) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
