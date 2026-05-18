@@ -22,7 +22,7 @@ if (cluster.isMaster) {
     console.log(`[MASTER ${process.pid}] Starting master process`);
 
     // Run the coin flip cron job only in the master process
-    // require('./helpers/coinFlipCron.js');
+    require('./helpers/coinFlipCron.js');
     
     // Cleanup deposit uploads cron
     require('./helpers/cleanDepositUploads.js');
