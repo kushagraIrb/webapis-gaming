@@ -334,9 +334,7 @@ class DepositModel {
             SELECT deposit_id
             FROM tbl_deposit_list
             WHERE user_id = ?
-              AND status = 1
-              AND COALESCE(verified, 0) = 0
-              AND COALESCE(fake_deposit, 0) = 0
+              AND status = 0
             LIMIT 1
         `;
         try {
@@ -354,9 +352,7 @@ class DepositModel {
             SELECT COUNT(*) AS pendingCount
             FROM tbl_deposit_list
             WHERE user_id = ?
-              AND status = 1
-              AND COALESCE(verified, 0) = 0
-              AND COALESCE(fake_deposit, 0) = 0
+              AND status = 0
         `;
         try {
             const [rows] = await db.promise().query(query, [userId]);
@@ -364,6 +360,26 @@ class DepositModel {
         } catch (error) {
             console.error('Error fetching pending deposit count:', error.message);
             throw new Error('Failed to fetch pending deposit count from the database');
+        }
+    }
+
+    // Check whether user already has at least one approved deposit
+    static async hasApprovedDeposit(userId) {
+        const query = `
+            SELECT 1
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+              AND status = 1
+              AND (verified = 1 OR verified IS NULL)
+              AND (fake_deposit = 0 OR fake_deposit IS NULL)
+            LIMIT 1
+        `;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0;
+        } catch (error) {
+            console.error('Error checking approved deposit:', error.message);
+            throw new Error('Failed to check approved deposit from the database');
         }
     }
 
@@ -403,8 +419,9 @@ class DepositModel {
             const statusCountQuery = `
                 SELECT
                     COUNT(*) AS total_rows,
+                    SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS status_0_rows,
                     SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS status_1_rows,
-                    SUM(CASE WHEN status = 1 AND COALESCE(verified, 0) = 0 AND COALESCE(fake_deposit, 0) = 0 THEN 1 ELSE 0 END) AS pending_by_rule_rows
+                    SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pending_by_rule_rows
                 FROM tbl_deposit_list
                 WHERE user_id = ?
             `;
