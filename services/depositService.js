@@ -37,10 +37,10 @@ class DepositService {
         try {
             await conn.beginTransaction();
 
-            const { deposit_id,deposit_amount,deposit_amount_step1,deposit_date,bank_owner_name,group_id } = depositData;
+            const { deposit_id,deposit_amount,deposit_amount_step1,deposit_date,bank_owner_name,group_id, bank_id } = depositData;
 
             // Validate required fields
-            if ( !deposit_id ||!deposit_amount ||!deposit_amount_step1 ||!deposit_date ||!bank_owner_name ||!group_id) {
+            if ( !deposit_id ||!deposit_amount ||!deposit_amount_step1 ||!deposit_date ||!bank_owner_name ||!group_id || !bank_id) {
                 const err = new Error('Some data is missing.');
                 err.statusCode = 400;
                 throw err;
