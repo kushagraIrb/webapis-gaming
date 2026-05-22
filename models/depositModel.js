@@ -347,12 +347,27 @@ class DepositModel {
     }
 
     // Fetch pending deposit requests count (0/1 style like withdrawal API)
-    static async fetchPendingRequestsCount(userId) {
+    // static async fetchPendingRequestsCount(userId) {
+    //     const query = `
+    //         SELECT COUNT(*) AS pendingCount
+    //         FROM tbl_deposit_list
+    //         WHERE user_id = ?
+    //           AND status = 0
+    //     `;
+    //     try {
+    //         const [rows] = await db.promise().query(query, [userId]);
+    //         return rows[0]?.pendingCount || 0;
+    //     } catch (error) {
+    //         console.error('Error fetching pending deposit count:', error.message);
+    //         throw new Error('Failed to fetch pending deposit count from the database');
+    //     }
+    // }
+     static async fetchPendingRequestsCount(userId) {
         const query = `
             SELECT COUNT(*) AS pendingCount
             FROM tbl_deposit_list
             WHERE user_id = ?
-              AND status = 0
+              AND verified = 0
         `;
         try {
             const [rows] = await db.promise().query(query, [userId]);
