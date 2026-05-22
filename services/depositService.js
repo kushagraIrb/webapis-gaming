@@ -3,6 +3,10 @@ const userModel = require('../models/userModel');
 const db = require('../config/database');
 
 class DepositService {
+    static formatInr(amount) {
+        return new Intl.NumberFormat('en-IN').format(Math.max(0, Math.floor(amount)));
+    }
+
     // Fetch deposit history or count for a user
     static async fetchDepositHistory(userId, page, perPage) {
         try {
@@ -59,7 +63,9 @@ class DepositService {
                 if (nowMs <= first24hEndsMs) {
                     const first24hTotal = await depositModel.getFirst24hDepositTotal(userId, userCreatedAt);
                     if ((first24hTotal + newDepositAmount) > 10000) {
+                        const remaining = Math.max(0, 10000 - first24hTotal);
                         const err = new Error('First 24 hours total deposit limit is Rs. 10,000.');
+                        err.message = `First 24h limit: ₹10,000. Remaining: ₹${DepositService.formatInr(remaining)}`;
                         err.statusCode = 422;
                         throw err;
                     }
@@ -70,16 +76,37 @@ class DepositService {
 
             // First-deposit gate:
             // Until the user has their first approved deposit, do not allow another while pending exists.
-            const hasApprovedDeposit = await depositModel.hasApprovedDeposit(userId);
-            if (!hasApprovedDeposit) {
-                const existingPendingDeposit = await depositModel.findPendingDepositByUserId(userId);
-                if (existingPendingDeposit) {
-                    const err = new Error('Your previous deposit is pending. Please wait for admin approval before making another deposit.');
-                    err.statusCode = 409;
-                    throw err;
-                }
-            }
+            // const hasApprovedDeposit = await depositModel.hasApprovedDeposit(userId);
+            // if (!hasApprovedDeposit) {
+            //     const existingPendingDeposit = await depositModel.findPendingDepositByUserId(userId);
+            //     if (existingPendingDeposit) {
+            //         const err = new Error('Your previous deposit is pending. Please wait for admin approval before making another deposit.');
+            //         err.statusCode = 409;
+            //         throw err;
+            //     }
+            // }
 
+            const hasApprovedDeposit =
+    await depositModel.hasApprovedDeposit(userId);
+
+// If first deposit is not approved yet,
+// block another deposit
+if (!hasApprovedDeposit) {
+
+    const pendingCount =
+        await depositModel.fetchPendingRequestsCount(userId);
+
+    if (pendingCount > 0) {
+
+        const err = new Error(
+            'Admin approval pending for your last deposit.'
+        );
+
+        err.statusCode = 409;
+
+        throw err;
+    }
+}
             // Check if deposit ID already exists with status 1
             const existingDeposit = await depositModel.getDepositById(deposit_id);
 
