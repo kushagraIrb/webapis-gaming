@@ -41,7 +41,7 @@ class DepositService {
 
             // Validate required fields
             if ( !deposit_id ||!deposit_amount ||!deposit_amount_step1 ||!deposit_date ||!bank_owner_name ||!group_id || !bank_id) {
-                const err = new Error('Some data is missing.');
+                const err = new Error('Some data is missing. Please refresh the page & try again.');
                 err.statusCode = 400;
                 throw err;
             }
