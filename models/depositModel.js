@@ -334,11 +334,11 @@ class DepositModel {
 
         const query = `
             INSERT INTO tbl_deposit_list
-            (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, deposit_screenshot, bank_owner_name, status, user_id, approved_date)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, deposit_screenshot, bank_owner_name, status, user_id, group_id, bank_id, approved_date)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
         `;
 
-        const values = [data.deposit_id, data.deposit_amount, data.deposit_amount_step1, data.deposit_date, data.deposit_screenshot, data.bank_owner_name, data.userId, istTime];
+        const values = [data.deposit_id, data.deposit_amount, data.deposit_amount_step1, data.deposit_date, data.deposit_screenshot, data.bank_owner_name, data.userId, data.group_id, data.bank_id, istTime];
 
         const [result] = await conn.query(query, values);
         return result;
