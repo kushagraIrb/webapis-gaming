@@ -33,6 +33,9 @@ if (cluster.isMaster) {
     // Cleanup ticket uploads cron
     require('./helpers/cleanTicketUploads.js');
 
+    // Run the bank reset cron job
+    require('./helpers/resetBankSystem.js');
+
     // Run log cleanup every 24 hours
     setInterval(() => {
         deleteOldLogs('errors');

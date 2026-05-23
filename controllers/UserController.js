@@ -484,6 +484,14 @@ class UserController {
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Strict',
             });
+
+            // Frontend utility cookie: reset block state on logout
+            res.cookie('is_blocked', 'false', {
+                httpOnly: false,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Lax',
+                path: '/',
+            });
     
             return res.status(200).json({ message: 'Logged out successfully.' });
         } catch (error) {

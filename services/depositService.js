@@ -1,7 +1,12 @@
 const depositModel = require('../models/depositModel');
 const userModel = require('../models/userModel');
+const db = require('../config/database');
 
 class DepositService {
+    static formatInr(amount) {
+        return new Intl.NumberFormat('en-IN').format(Math.max(0, Math.floor(amount)));
+    }
+
     // Fetch deposit history or count for a user
     static async fetchDepositHistory(userId, page, perPage) {
         try {
@@ -18,34 +23,105 @@ class DepositService {
 
     // Fetch Admin Bank Account based on the deposit amount
     static async getBankAccountByValue(depositAmount) {
-        try {
-            return await depositModel.fetchBankAccountByValue(depositAmount);
-        } catch (error) {
-            console.error('Error in depositModel:', error.message);
-            throw new Error('Failed to fetch deposit history');
-        }
+        return await depositModel.fetchBankAccountByValue(depositAmount);
+    }
+
+    static async resetBankSystem() {
+        return await depositModel.resetBankSystem();
     }
 
     // Save deposit for a user
     static async saveDeposit(userId, depositData, file) {
+        const conn = await db.promise().getConnection();
+
         try {
-            const { deposit_id, deposit_amount, deposit_amount_step1, deposit_date, bank_owner_name
-            } = depositData;
-            
+            await conn.beginTransaction();
+
+            const { deposit_id,deposit_amount,deposit_amount_step1,deposit_date,bank_owner_name,group_id, bank_id } = depositData;
+
             // Validate required fields
-            if (!deposit_id || !deposit_amount || !deposit_amount_step1 || !deposit_date || !bank_owner_name) {
-                const err = new Error('Some data is missing.');
+            if ( !deposit_id ||!deposit_amount ||!deposit_amount_step1 ||!deposit_date ||!bank_owner_name ||!group_id || !bank_id) {
+                const err = new Error('Some data is missing. Please refresh the page & try again.');
                 err.statusCode = 400;
                 throw err;
             }
 
+            const newDepositAmount = parseFloat(deposit_amount_step1);
+            if (isNaN(newDepositAmount) || newDepositAmount <= 0) {
+                const err = new Error('Invalid deposit amount.');
+                err.statusCode = 400;
+                throw err;
+            }
+
+            // Enforce first-24h total deposit limit for newly registered users
+            const userCreatedAt = await depositModel.getUserCreatedAt(userId);
+            if (userCreatedAt) {
+                const userCreatedMs = new Date(userCreatedAt).getTime();
+                const first24hEndsMs = userCreatedMs + (24 * 60 * 60 * 1000);
+                const nowMs = Date.now();
+
+                if (nowMs <= first24hEndsMs) {
+                    const first24hTotal = await depositModel.getFirst24hDepositTotal(userId, userCreatedAt);
+                    if ((first24hTotal + newDepositAmount) > 10000) {
+                        const remaining = Math.max(0, 10000 - first24hTotal);
+                        const err = new Error('First 24 hours total deposit limit is Rs. 10,000.');
+                        err.message = `First 24h limit: ₹10,000. Remaining: ₹${DepositService.formatInr(remaining)}`;
+                        err.statusCode = 422;
+                        throw err;
+                    }
+                }
+            }
+
             const deposit_screenshot = file ? file.filename : null;
 
+            // First-deposit gate:
+            // Until the user has their first approved deposit, do not allow another while pending exists.
+            // const hasApprovedDeposit = await depositModel.hasApprovedDeposit(userId);
+            // if (!hasApprovedDeposit) {
+            //     const existingPendingDeposit = await depositModel.findPendingDepositByUserId(userId);
+            //     if (existingPendingDeposit) {
+            //         const err = new Error('Your previous deposit is pending. Please wait for admin approval before making another deposit.');
+            //         err.statusCode = 409;
+            //         throw err;
+            //     }
+            // }
+
+            const hasApprovedDeposit =
+    await depositModel.hasApprovedDeposit(userId);
+
+// If first deposit is not approved yet,
+// block another deposit
+if (!hasApprovedDeposit) {
+
+    const pendingCount =
+        await depositModel.fetchPendingRequestsCount(userId);
+
+    if (pendingCount > 0) {
+
+        const err = new Error(
+            'Admin approval pending for your last deposit.'
+        );
+
+        err.statusCode = 409;
+
+        throw err;
+    }
+}
             // Check if deposit ID already exists with status 1
             const existingDeposit = await depositModel.getDepositById(deposit_id);
+
             if (existingDeposit) {
                 const err = new Error('This screenshot has already been approved. Please try again with a different screenshot.');
                 err.statusCode = 409;
+                throw err;
+            }
+
+            // Atomic consumed amount update
+            const updated = await depositModel.updateConsumedAmount(conn, group_id, deposit_amount);
+
+            if (!updated) {
+                const err = new Error('Please refresh the page and try again.');
+                err.statusCode = 400;
                 throw err;
             }
 
@@ -61,42 +137,49 @@ class DepositService {
             };
 
             // Save deposit
-            const result = await depositModel.saveDeposit(data);
+            const result = await depositModel.saveDeposit(conn, data);
 
-            if (result) {
-                // Fetch bonus_league_id
-                const bonusData = await userModel.getBonusIdByUserId(userId);
-                const bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
-
-                // Calculate user balance
-                const availableBalance = await depositModel.getUserAvailableBalance(userId);
-                const totalBalance = parseFloat(deposit_amount_step1) + parseFloat(availableBalance || 0);
-
-                const transData = {
-                    transaction_pk: result.insertId,
-                    transaction_id: deposit_id,
-                    userId,
-                    credit_amount: deposit_amount_step1,
-                    total_amount: totalBalance,
-                    bonus_league_id
-                };
-
-                // Add transaction history
-                await depositModel.saveTransactionHistory(transData);
-
-                // Update user registration highlight
-                await depositModel.updateUserHighlight(userId);
-
-                return {
-                    status: true,
-                    message: 'Deposit saved successfully and added to the wallet.',
-                };
-            } else {
-                throw new Error('Something went wrong, please try again.');
+            if (!result) {
+                const err = new Error('Something went wrong, please try again.');
+                err.statusCode = 500;
+                throw err;
             }
+
+            // Fetch bonus league
+            const bonusData = await userModel.getBonusIdByUserId(userId);
+
+            const bonus_league_id = bonusData ? bonusData.bonus_league_id : null;
+
+            // Get user balance
+            const availableBalance = await depositModel.getUserAvailableBalance(userId);
+
+            const totalBalance = parseFloat(deposit_amount_step1) + parseFloat(availableBalance || 0);
+
+            const transData = {
+                transaction_pk: result.insertId,
+                transaction_id: deposit_id,
+                userId,
+                credit_amount: deposit_amount_step1,
+                total_amount: totalBalance,
+                bonus_league_id
+            };
+
+            // Save transaction history
+            await depositModel.saveTransactionHistory(conn, transData);
+            // Update highlight
+            await depositModel.updateUserHighlight(conn, userId);
+            await conn.commit();
+
+            return {
+                status: true,
+                message: 'Deposit saved successfully and added to the wallet.',
+            };
         } catch (error) {
+            await conn.rollback();
             console.error('Error saving deposit:', error.message);
             throw error;
+        } finally {
+            conn.release();
         }
     }
 
@@ -129,6 +212,24 @@ class DepositService {
             };
         } catch (error) {
             console.error('Error saving deposit:', error.message);
+            throw error;
+        }
+    }
+
+    static async getPendingRequestsCount(userId) {
+        try {
+            return await depositModel.fetchPendingRequestsCount(userId);
+        } catch (error) {
+            console.error('Error fetching pending deposit requests count:', error.message);
+            throw error;
+        }
+    }
+
+    static async getPendingDepositDiagnostics(userId) {
+        try {
+            return await depositModel.getPendingDepositDiagnostics(userId);
+        } catch (error) {
+            console.error('Error fetching pending deposit diagnostics:', error.message);
             throw error;
         }
     }
