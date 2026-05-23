@@ -8,7 +8,7 @@ const authenticateToken = require('../helpers/authToken');
 
 router.use(express.json());
 
-// Apply authenticateToken middleware to all routes below this line
+// Apply authenticateToken to all routes below this line
 router.use(authenticateToken);
 
 router.get('/history', depositController.fetchDepositHistory);
