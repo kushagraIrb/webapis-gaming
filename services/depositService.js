@@ -86,27 +86,27 @@ class DepositService {
             //     }
             // }
 
-            const hasApprovedDeposit =
-    await depositModel.hasApprovedDeposit(userId);
+            const hasApprovedDeposit = await depositModel.hasApprovedDeposit(userId);
 
-// If first deposit is not approved yet,
-// block another deposit
-if (!hasApprovedDeposit) {
+            // If first deposit is not approved yet,
+            // block another deposit
+            if (!hasApprovedDeposit) {
 
-    const pendingCount =
-        await depositModel.fetchPendingRequestsCount(userId);
+                const pendingCount =
+                    await depositModel.fetchPendingRequestsCount(userId);
 
-    if (pendingCount > 0) {
+                if (pendingCount > 0) {
 
-        const err = new Error(
-            'Admin approval pending for your last deposit.'
-        );
+                    const err = new Error(
+                        'Admin approval pending for your last deposit.'
+                    );
 
-        err.statusCode = 409;
+                    err.statusCode = 409;
 
-        throw err;
-    }
-}
+                    throw err;
+                }
+            }
+            
             // Check if deposit ID already exists with status 1
             const existingDeposit = await depositModel.getDepositById(deposit_id);
 
@@ -133,7 +133,9 @@ if (!hasApprovedDeposit) {
                 deposit_amount_step1,
                 deposit_date,
                 deposit_screenshot,
-                bank_owner_name
+                bank_owner_name,
+                bank_id,
+                group_id
             };
 
             // Save deposit
@@ -225,14 +227,14 @@ if (!hasApprovedDeposit) {
         }
     }
 
-    static async getPendingDepositDiagnostics(userId) {
-        try {
-            return await depositModel.getPendingDepositDiagnostics(userId);
-        } catch (error) {
-            console.error('Error fetching pending deposit diagnostics:', error.message);
-            throw error;
-        }
-    }
+    // static async getPendingDepositDiagnostics(userId) {
+    //     try {
+    //         return await depositModel.getPendingDepositDiagnostics(userId);
+    //     } catch (error) {
+    //         console.error('Error fetching pending deposit diagnostics:', error.message);
+    //         throw error;
+    //     }
+    // }
 }
 
 module.exports = DepositService;

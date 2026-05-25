@@ -422,46 +422,46 @@ class DepositModel {
     }
 
     // Debug helper to inspect how pending deposit rows are being classified
-    static async getPendingDepositDiagnostics(userId) {
-        try {
-            const statusCountQuery = `
-                SELECT
-                    COUNT(*) AS total_rows,
-                    SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS status_0_rows,
-                    SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS status_1_rows,
-                    SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pending_by_rule_rows
-                FROM tbl_deposit_list
-                WHERE user_id = ?
-            `;
+    // static async getPendingDepositDiagnostics(userId) {
+    //     try {
+    //         const statusCountQuery = `
+    //             SELECT
+    //                 COUNT(*) AS total_rows,
+    //                 SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS status_0_rows,
+    //                 SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS status_1_rows,
+    //                 SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS pending_by_rule_rows
+    //             FROM tbl_deposit_list
+    //             WHERE user_id = ?
+    //         `;
 
-            const rowsPreviewQuery = `
-                SELECT
-                    id,
-                    deposit_id,
-                    deposit_amount_step1,
-                    status,
-                    COALESCE(verified, 0) AS verified,
-                    COALESCE(fake_deposit, 0) AS fake_deposit,
-                    approved_date,
-                    deposit_date
-                FROM tbl_deposit_list
-                WHERE user_id = ?
-                ORDER BY id DESC
-                LIMIT 20
-            `;
+    //         const rowsPreviewQuery = `
+    //             SELECT
+    //                 id,
+    //                 deposit_id,
+    //                 deposit_amount_step1,
+    //                 status,
+    //                 COALESCE(verified, 0) AS verified,
+    //                 COALESCE(fake_deposit, 0) AS fake_deposit,
+    //                 approved_date,
+    //                 deposit_date
+    //             FROM tbl_deposit_list
+    //             WHERE user_id = ?
+    //             ORDER BY id DESC
+    //             LIMIT 20
+    //         `;
 
-            const [countRows] = await db.promise().query(statusCountQuery, [userId]);
-            const [previewRows] = await db.promise().query(rowsPreviewQuery, [userId]);
+    //         const [countRows] = await db.promise().query(statusCountQuery, [userId]);
+    //         const [previewRows] = await db.promise().query(rowsPreviewQuery, [userId]);
 
-            return {
-                summary: countRows[0] || {},
-                latest_rows: previewRows || [],
-            };
-        } catch (error) {
-            console.error('Error fetching deposit diagnostics:', error.message);
-            throw new Error('Failed to fetch deposit diagnostics from the database');
-        }
-    }
+    //         return {
+    //             summary: countRows[0] || {},
+    //             latest_rows: previewRows || [],
+    //         };
+    //     } catch (error) {
+    //         console.error('Error fetching deposit diagnostics:', error.message);
+    //         throw new Error('Failed to fetch deposit diagnostics from the database');
+    //     }
+    // }
 
     // Save deposit
     static async saveDeposit(conn, data) {
