@@ -9,13 +9,13 @@ class DepositService {
             const start = (page - 1) * perPage; // Calculate offset for pagination
             const deposits = await depositModel.getDepositHistory(userId, start, perPage);
             const totalCount = await depositModel.getDepositCount(userId); // Fetch total count
-    
+
             return { deposits, totalCount };
         } catch (error) {
             console.error('Error in depositService:', error.message);
             throw new Error('Failed to fetch deposit history');
         }
-    }    
+    }
 
     // Fetch Admin Bank Account based on the deposit amount
     static async getBankAccountByValue(depositAmount) {
@@ -32,12 +32,60 @@ class DepositService {
         try {
             const { deposit_id, deposit_amount, deposit_amount_step1, deposit_date, bank_owner_name
             } = depositData;
-            
+
             // Validate required fields
             if (!deposit_id || !deposit_amount || !deposit_amount_step1 || !deposit_date || !bank_owner_name) {
                 const err = new Error('Some data is missing.');
                 err.statusCode = 400;
                 throw err;
+            }
+
+            const newDepositAmount = parseFloat(deposit_amount_step1);
+            if (isNaN(newDepositAmount) || newDepositAmount <= 0) {
+                const err = new Error('Invalid deposit amount.');
+                err.statusCode = 400;
+                throw err;
+            }
+
+            // Enforce first-24h total deposit limit for newly registered users
+            const userCreatedAt = await depositModel.getUserCreatedAt(userId);
+            if (userCreatedAt) {
+                const userCreatedMs = new Date(userCreatedAt).getTime();
+                const first24hEndsMs = userCreatedMs + (24 * 60 * 60 * 1000);
+                const nowMs = Date.now();
+
+                if (nowMs <= first24hEndsMs) {
+                    const first24hTotal = await depositModel.getFirst24hDepositTotal(userId, userCreatedAt);
+                    if ((first24hTotal + newDepositAmount) > 10000) {
+                        const remaining = Math.max(0, 10000 - first24hTotal);
+                        const err = new Error('First 24 hours total deposit limit is Rs. 10,000.');
+                        err.message = `First 24h limit: ₹10,000. Remaining: ₹${DepositService.formatInr(remaining)}`;
+                        err.statusCode = 422;
+                        throw err;
+                    }
+                }
+            }
+
+            const hasApprovedDeposit =
+                await depositModel.hasApprovedDeposit(userId);
+
+            // If first deposit is not approved yet,
+            // block another deposit
+            if (!hasApprovedDeposit) {
+
+                const pendingCount =
+                    await depositModel.fetchPendingRequestsCount(userId);
+
+                if (pendingCount > 0) {
+
+                    const err = new Error(
+                        'Admin approval pending for your last deposit.'
+                    );
+
+                    err.statusCode = 409;
+
+                    throw err;
+                }
             }
 
             const deposit_screenshot = file ? file.filename : null;
@@ -122,6 +170,7 @@ class DepositService {
         }
     }
 
+
     // Save deposit log for a user
     static async depositLog(userId, depositData, file) {
         try {
@@ -151,6 +200,15 @@ class DepositService {
             };
         } catch (error) {
             console.error('Error saving deposit:', error.message);
+            throw error;
+        }
+    }
+
+    static async getPendingRequestsCount(userId) {
+        try {
+            return await depositModel.fetchPendingRequestsCount(userId);
+        } catch (error) {
+            console.error('Error fetching pending deposit requests count:', error.message);
             throw error;
         }
     }
