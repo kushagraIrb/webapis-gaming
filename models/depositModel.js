@@ -35,7 +35,7 @@ class DepositModel {
         try {
             // Initial query to find a matching bank account
             let query = `SELECT * FROM tbl_bank_details WHERE ? BETWEEN min_value AND max_value AND status = 1 AND chosen_flag = 0 ORDER BY id ASC LIMIT 1`;
-            
+
             const [rows] = await db.promise().query(query, [parseFloat(depositAmount)]);
 
             let data = rows[0];
@@ -85,7 +85,7 @@ class DepositModel {
             FROM tbl_deposit_list
             WHERE deposit_date = ?
         `;
-    
+
         const [rows] = await db.promise().query(query, [depositDate]);
         return rows;
     }
@@ -113,6 +113,80 @@ class DepositModel {
         } catch (error) {
             console.error('Error saving deposit:', error.message);
             throw new Error('Failed to save deposit data to the database');
+        }
+    }
+
+
+    //user-block concept
+
+    static async fetchPendingRequestsCount(userId) {
+        const query = `
+            SELECT verified AS pendingCount
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+        `;
+
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+
+            if (!rows.length) {
+                return 0;
+            }
+
+            return rows[0].pendingCount === 0 ? 1 : 0;
+
+        } catch (error) {
+            console.error('Error fetching pending deposit count:', error.message);
+            throw new Error('Failed to fetch pending deposit count from the database');
+        }
+    }
+
+    static async hasApprovedDeposit(userId) {
+        const query = `
+            SELECT 1
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+              AND status = 1
+              AND (verified = 1 OR verified IS NULL)
+              AND (fake_deposit = 0 OR fake_deposit IS NULL)
+            LIMIT 1
+        `;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0;
+        } catch (error) {
+            console.error('Error checking approved deposit:', error.message);
+            throw new Error('Failed to check approved deposit from the database');
+        }
+    }
+
+    static async getUserCreatedAt(userId) {
+        const query = `SELECT created FROM tbl_registration WHERE id = ? LIMIT 1`;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0 ? rows[0].created : null;
+        } catch (error) {
+            console.error('Error fetching user created timestamp:', error.message);
+            throw new Error('Failed to fetch user registration timestamp from the database');
+        }
+    }
+
+    static async getFirst24hDepositTotal(userId, userCreatedAt) {
+        const query = `
+            SELECT COALESCE(SUM(deposit_amount_step1), 0) AS total
+            FROM tbl_deposit_list
+            WHERE user_id = ?
+              AND approved_date >= ?
+              AND approved_date <= DATE_ADD(?, INTERVAL 24 HOUR)
+        `;
+        try {
+            const [rows] = await db.promise().query(query, [userId, userCreatedAt, userCreatedAt]);
+            return parseFloat(rows[0]?.total || 0);
+        } catch (error) {
+            console.error('Error fetching first 24h deposit total:', error.message);
+            throw new Error('Failed to fetch first 24h deposit total from the database');
         }
     }
 
@@ -169,7 +243,7 @@ class DepositModel {
     static async insertDepositLog(data) {
         // Get the current time in IST
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-        
+
         const query = `INSERT INTO tbl_deposit_log (deposit_id, deposit_amount, deposit_amount_step1, deposit_date, ss_time_frame, deposit_screenshot, user_id, status, created_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
         const values = [
             data.deposit_id,
