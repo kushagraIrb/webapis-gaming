@@ -79,6 +79,17 @@ class DepositModel {
         }
     }
 
+    static async getDepositsByDate(depositDate) {
+        const query = `
+            SELECT deposit_id
+            FROM tbl_deposit_list
+            WHERE deposit_date = ?
+        `;
+    
+        const [rows] = await db.promise().query(query, [depositDate]);
+        return rows;
+    }
+
     // Save deposit
     static async saveDeposit(data) {
         // Get the current time in IST
