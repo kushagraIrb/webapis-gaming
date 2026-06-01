@@ -49,6 +49,27 @@ class DepositService {
                 throw err;
             }
 
+            // Check same screenshot timestamp/deposit date
+            const depositsWithSameDate = await depositModel.getDepositsByDate(deposit_date);
+            
+            if (depositsWithSameDate.length > 0) {
+                for (const deposit of depositsWithSameDate) {
+                    const similarity =
+                        stringSimilarity.compareTwoStrings(
+                            String(deposit.deposit_id).trim(),
+                            String(deposit_id).trim()
+                        ) * 100;
+            
+                    if (similarity > 70) {
+                        const err = new Error(
+                            'This screenshot has already been approved. Please try again with a different screenshot.'
+                        );
+                        err.statusCode = 409;
+                        throw err;
+                    }
+                }
+            }
+
             // Prepare deposit data
             const data = {
                 userId,
