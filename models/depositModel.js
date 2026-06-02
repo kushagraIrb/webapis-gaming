@@ -119,24 +119,28 @@ class DepositModel {
 
     //user-block concept
 
-    static async fetchPendingRequestsCount(userId) {
+   static async fetchPendingRequestsCount(userId) {
         const query = `
-            SELECT verified AS pendingCount
+            SELECT 
+                (SELECT verified
+                 FROM tbl_deposit_list
+                 WHERE user_id = ?
+                 ORDER BY id ASC
+                 LIMIT 1) AS pendingCount,
+                COUNT(*) AS totalRecords
             FROM tbl_deposit_list
             WHERE user_id = ?
-            ORDER BY id ASC
-            LIMIT 1
         `;
-
+    
         try {
-            const [rows] = await db.promise().query(query, [userId]);
-
-            if (!rows.length) {
+            const [rows] = await db.promise().query(query, [userId, userId]);
+    
+            if (!rows.length || rows[0].totalRecords === 0) {
                 return 0;
             }
-
-            return rows[0].pendingCount === 0 ? 1 : 0;
-
+    
+            return (rows[0].pendingCount === 0 && rows[0].totalRecords === 1) ? 1 : 0;
+    
         } catch (error) {
             console.error('Error fetching pending deposit count:', error.message);
             throw new Error('Failed to fetch pending deposit count from the database');
