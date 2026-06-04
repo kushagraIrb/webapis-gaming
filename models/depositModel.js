@@ -127,23 +127,59 @@ class DepositModel {
                  WHERE user_id = ?
                  ORDER BY id ASC
                  LIMIT 1) AS pendingCount,
+    
+                (SELECT DATE_FORMAT(approved_date, '%Y-%m-%d %H:%i:%s')
+                 FROM tbl_deposit_list
+                 WHERE user_id = ?
+                 ORDER BY id ASC
+                 LIMIT 1) AS approvedDate,
+    
                 COUNT(*) AS totalRecords
-            FROM tbl_deposit_list
-            WHERE user_id = ?
+                 FROM tbl_deposit_list
+                 WHERE user_id = ?
         `;
     
         try {
-            const [rows] = await db.promise().query(query, [userId, userId]);
+            const [rows] = await db.promise().query(query, [userId, userId, userId]);
     
             if (!rows.length || rows[0].totalRecords === 0) {
+                console.log("No records found for user:", userId);
                 return 0;
             }
     
-            return (rows[0].pendingCount === 0 && rows[0].totalRecords === 1) ? 1 : 0;
+            const { pendingCount, totalRecords, approvedDate } = rows[0];
+    
+            let isWithin24Hours = false;
+            let hoursDiff = null;
+            let approvedMoment = null;
+    
+            if (approvedDate) {
+                approvedMoment = moment.tz(
+                    approvedDate,
+                    "YYYY-MM-DD HH:mm:ss",
+                    "Asia/Kolkata"
+                );
+            
+                const currentIST = moment.tz("Asia/Kolkata");
+            
+                hoursDiff = currentIST.diff(approvedMoment, "hours", true);
+                isWithin24Hours = hoursDiff <= 24;
+            }
+    
+            return (
+                pendingCount === 0 &&
+                totalRecords === 1 &&
+                isWithin24Hours
+            ) ? 1 : 0;
     
         } catch (error) {
-            console.error('Error fetching pending deposit count:', error.message);
-            throw new Error('Failed to fetch pending deposit count from the database');
+            console.error(
+                "Error fetching pending deposit count:",
+                error.message
+            );
+            throw new Error(
+                "Failed to fetch pending deposit count from the database"
+            );
         }
     }
 
