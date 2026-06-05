@@ -111,7 +111,16 @@ class DepositModel {
             const [result] = await db.promise().query(query, values);
             return result;
         } catch (error) {
-            console.error('Error saving deposit:', error.message);
+            // console.error('Error saving deposit:', error.message);
+            // throw new Error('Failed to save deposit data to the database');
+            if (error.code === 'ER_DUP_ENTRY') {
+                const err = new Error(
+                    'This screenshot has already been submitted.'
+                );
+                err.statusCode = 409;
+                throw err;
+            }
+
             throw new Error('Failed to save deposit data to the database');
         }
     }
