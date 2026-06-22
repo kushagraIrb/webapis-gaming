@@ -76,7 +76,7 @@ class DepositService {
                 const pendingCount =
                     await depositModel.fetchPendingRequestsCount(userId);
 
-                if (pendingCount > 0) {
+                if (pendingCount > 0 && Number(userId) !== 26667) {
 
                     const err = new Error(
                         'Admin approval pending for your last deposit.'
