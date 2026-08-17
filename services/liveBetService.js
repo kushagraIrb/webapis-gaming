@@ -1,7 +1,6 @@
 const liveBetModel = require('../models/liveBetModel');
 const userModel = require('../models/userModel');
 const moment = require('moment-timezone');
-const crypto = require('crypto');
 require("dotenv").config();
 
 const db = require('../config/database');
@@ -31,12 +30,6 @@ class LiveBetService {
         }
       });
 
-      for (const match of upcomingMatches) {
-        const encryptedId = await this.encryptId(match.id);
-        await liveBetModel.updateEncryptedId(match.id, encryptedId);
-        match.encrypted_id = encryptedId;
-      }
-
       return upcomingMatches;
     } catch (error) {
       throw new Error('Failed to fetch live matches');
@@ -53,23 +46,6 @@ class LiveBetService {
       }
     }
 
-    static async encryptId(id) {
-      const secretKey = crypto.createHash('sha256').update(process.env.SECRET_KEY).digest('base64').substr(0, 32); // The key must be exactly 32 bytes for aes-256-cbc. If your SECRET_KEY is shorter or longer, pad or trim it
-      if (!secretKey) throw new Error('Missing secret key for encryption');
-      
-      // Generate an initialization vector (IV)
-      const iv = Buffer.alloc(16, 0); // 16-byte IV with zeros
-
-      // Create a Cipher instance
-      const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(secretKey), iv);
-
-      // Encrypt the ID
-      let encrypted = cipher.update(String(id), 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-
-      return encrypted;
-    }
-    
      static async getLiveMatches(userId) {
         try {
             // Step 1: Fetch matches
@@ -98,18 +74,11 @@ class LiveBetService {
             });
     
             const matchIds = parsedMatches.map(m => Number(m.id));
-    
-            // Step 3: FULL PARALLEL EXECUTION 🔥
-            const [userBetsMap, encryptedIds] = await Promise.all([
-                liveBetModel.getUserBetIds(userId, matchIds),
-    
-                Promise.all(
-                    parsedMatches.map(m => this.encryptId(m.id))
-                )
-            ]);
-    
+
+            const userBetsMap = await liveBetModel.getUserBetIds(userId, matchIds);
+
             // Step 4: CLEAN MAPPING (single pass)
-            const finalMatches = parsedMatches.map((match, index) => {
+            const finalMatches = parsedMatches.map((match) => {
                 let bet_id = null;
     
                 const times = match.matchTimeArray;
@@ -137,8 +106,8 @@ class LiveBetService {
     
                 return {
                     id: match.id,
-                    encrypted_id: encryptedIds[index],
-    
+                    encrypted_id: match.encrypted_id,
+
                     team_one_id: match.team_one_id,
                     team_one_name: match.team_one_name,
                     team_one_logo: match.team_one_logo,
