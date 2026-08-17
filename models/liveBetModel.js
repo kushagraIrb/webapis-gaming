@@ -168,16 +168,6 @@ class LiveBetModel {
     //     }
     // }
 
-    static async updateEncryptedId(id, encryptedId) {
-        try {
-            const query = `UPDATE tbl_upcoming_match SET encrypted_id = ? WHERE id = ?`;
-            await db.promise().query(query, [encryptedId, id]);
-        } catch (error) {
-            console.error(`Error updating encrypted ID for match ID ${id}:`, error.message);
-            throw new Error('Failed to update encrypted ID');
-        }
-    }
-
     static async fetchMatchById(encryptedMatchId) {
         const query = `
             SELECT 
