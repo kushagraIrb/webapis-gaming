@@ -28,7 +28,7 @@ class WithdrawalModel {
         // Get the current time in IST
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `INSERT INTO tbl_withdrawal (user_id, bank_name, account_number, ifsc, holder_name, pan_number, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, withdrawal_amount, withdrawal_option, withdrawal_text, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        const query = `INSERT INTO tbl_withdrawal (user_id, bank_name, account_number, ifsc, holder_name, pan_number, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, withdrawal_amount, withdrawal_option, withdrawal_text, cancel_reason, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         try {
             const result = await db.promise().query(query, [
@@ -46,6 +46,7 @@ class WithdrawalModel {
                 withdrawalData.paytm,
                 withdrawalData.withdrawalAmount,
                 withdrawalData.withdrawalOption,
+                withdrawalData.withdrawalText,
                 withdrawalData.withdrawalText,
                 istTime
             ]);
@@ -109,7 +110,7 @@ class WithdrawalModel {
 
     // Fetch withdrawal data based on page & perPage
     static async getWithdrawals(userId, perPage, page) {
-        const query = `SELECT id, transactionID, screen_short, account_number, ifsc, withdrawal_amount, status, modified, cancelBy, cancel_reason 
+        const query = `SELECT id, transactionID, screen_short, account_number, ifsc, withdrawal_amount, status, modified, cancelBy, cancel_reason, cancel_reason AS reason 
                     FROM tbl_withdrawal 
                     WHERE user_id = ? 
                     ORDER BY id DESC 
@@ -209,7 +210,7 @@ class WithdrawalModel {
         // Get the current time in IST
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
-        const query = `INSERT INTO tbl_withdrawal (user_id, bank_name, account_number, ifsc, holder_name, pan_number, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, withdrawal_amount, charge_percent, withdrawal_option, withdrawal_text, fast_withdrawal, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1,?)`;
+        const query = `INSERT INTO tbl_withdrawal (user_id, bank_name, account_number, ifsc, holder_name, pan_number, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, withdrawal_amount, charge_percent, withdrawal_option, withdrawal_text, cancel_reason, fast_withdrawal, modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1,?)`;
 
         try {
             const result = await db.promise().query(query, [
@@ -228,6 +229,7 @@ class WithdrawalModel {
                 withdrawalData.withdrawalAmount,
                 withdrawalData.chargePercent,
                 withdrawalData.withdrawalOption,
+                withdrawalData.withdrawalText,
                 withdrawalData.withdrawalText,
                 istTime
             ]);
