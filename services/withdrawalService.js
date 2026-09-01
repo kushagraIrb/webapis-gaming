@@ -1,6 +1,7 @@
 const withdrawalModel = require('../models/withdrawalModel');
 const transactionHistoryModel = require("../models/transactionHistoryModel");
 const userModel = require("../models/userModel");
+const liveBetModel = require('../models/liveBetModel');
 const sendMail = require('../helpers/sendMail');
 
 class WithdrawalService {
@@ -47,6 +48,15 @@ class WithdrawalService {
                 return {
                     status: false,
                     message: "You already made a request for withdrawal.",
+                };
+            }
+
+            // Match the betting restriction: an admin-blocked user cannot withdraw.
+            const bettingRestricted = await liveBetModel.hasDisallowedBetsInLastWeek(userId);
+            if (bettingRestricted) {
+                return {
+                    status: false,
+                    message: "Your withdrawal is currently restricted. Please try again later.",
                 };
             }
 
