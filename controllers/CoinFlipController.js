@@ -115,7 +115,7 @@ class CoinFlipController {
             if (bettingRestricted > 0) {
                 // ❌ At least one row has is_bet_allowed = 1
                 return res.status(401).json({
-                    message: 'Your withdrawal is in progress so betting is currently restricted. Please try again after some time!',
+                    message: 'Withdrawal request is in progress. Please wait.',
                 });
             }
     
