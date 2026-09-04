@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const moment = require('moment');
+const upload = require('../helpers/uploads');
 
 class WithdrawalModel {
     // Get last withdrawal Date for a user
@@ -101,7 +102,10 @@ class WithdrawalModel {
 
         try {
             const [rows] = await db.promise().query(query);
-            return rows;
+            return rows.map(row => ({
+                ...row,
+                screenshot_path: upload.resolveStoredUploadPath(row.screen_short, ['withdrawal', 'common'])
+            }));
         } catch (error) {
             console.error('Error fetching withdrawal data:', error.message);
             throw error;

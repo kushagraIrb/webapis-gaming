@@ -14,7 +14,7 @@ router.use(authenticateToken);
 router.get('/history', depositController.fetchDepositHistory);
 router.get('/bank-account/:depositAmount', depositController.getBankAccountByValue);
 router.get('/get-pending-requests-count', depositController.getPendingRequestsCount);
-router.post('/save', upload.single('screenshot'), depositController.saveDeposit);
-router.post('/save-log', upload.single('screenshot'), depositController.depositLog);
+router.post('/save', upload.forSubFolder('deposit').single('screenshot'), depositController.saveDeposit);
+router.post('/save-log', upload.forSubFolder('deposit_log').single('screenshot'), depositController.depositLog);
 
 module.exports = router;

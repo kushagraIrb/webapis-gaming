@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const moment = require('moment');
+const upload = require('../helpers/uploads');
 
 class DepositModel {
     // Fetch deposit history for a user with pagination
@@ -10,12 +11,18 @@ class DepositModel {
         if (perPage !== null && start !== null) {
             query += ` LIMIT ?, ?`;
             const [rows] = await db.promise().query(query, [userId, userId, start, perPage]);
-            return rows;
+            return rows.map(row => ({
+                ...row,
+                screenshot_path: upload.resolveStoredUploadPath(row.deposit_screenshot, ['deposit', 'deposit_log', 'common'])
+            }));
         }
 
         // Fetch all data if no pagination
         const [rows] = await db.promise().query(query, [userId, userId]);
-        return rows;
+        return rows.map(row => ({
+            ...row,
+            screenshot_path: upload.resolveStoredUploadPath(row.deposit_screenshot, ['deposit', 'deposit_log', 'common'])
+        }));
     }
 
     // Get total count of deposits for a user
