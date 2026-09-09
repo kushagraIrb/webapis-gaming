@@ -16,8 +16,9 @@ class MatchIdModel {
                 ON ds.id = umi.site_id
                 AND umi.user_id = ?
             WHERE ds.status = 1
-            ORDER BY 
-                CASE 
+            ORDER BY
+                CASE
+                    WHEN ds.id = 13 THEN 0
                     WHEN ds.id = 12 THEN 2.5
                     ELSE ds.id
                 END ASC
