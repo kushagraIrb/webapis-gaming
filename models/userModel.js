@@ -356,7 +356,8 @@ class UserModel {
 
     static async changeUserPassword(hashedPassword, userId) {
         try {
-            const query = `UPDATE tbl_registration SET password = ? WHERE id = ?`;
+            // Clearing both tokens invalidates every existing device session.
+            const query = `UPDATE tbl_registration SET password = ?, session_token = NULL, refresh_token = NULL WHERE id = ?`;
             const [result] = await db.promise().query(query, [hashedPassword, userId]);
             return result;
         } catch (error) {
