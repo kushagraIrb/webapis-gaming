@@ -116,7 +116,17 @@ class MatchIdService {
                 transferType,
                 amount
             );
-    
+
+            // Fire live toast to eligible admins (fire-and-forget; never throws).
+            // Admin backend decides recipients based on match-id permissions.
+            const { notifyAdmin } = require('../helpers/notifyAdmin');
+            notifyAdmin('match_id_transfer_request', {
+                user_id: userId,
+                site_id: siteId,
+                transfer_type: transferType,
+                amount: Number(amount || 0),
+            });
+
             // Fetch user + site details
             const user = await matchIdModel.getUserSiteDetails(userId, siteId);
     
