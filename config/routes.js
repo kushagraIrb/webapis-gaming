@@ -23,6 +23,7 @@ const routes = [
     { path: '/api/user-dashboard', router: require('../routes/dashboardRoutes') },
     { path: '/api/with-proof', router: require('../routes/withdrawalProofRouter') },
     { path: '/api/match-id', router: require('../routes/matchIdRouter.js') },
+    { path: '/api/internal', router: require('../routes/internalRouter') },
 ];
 
 module.exports = (app) => {

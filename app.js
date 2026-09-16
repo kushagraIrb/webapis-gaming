@@ -1,11 +1,13 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const os = require('os');
 const cluster = require('cluster');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { setupPrimary: setupSocketClusterPrimary } = require('@socket.io/cluster-adapter');
 const { swaggerUi, swaggerDocs } = require('./config/swagger.js');
 const { logger, deleteOldLogs } = require('./logger.js');
 const db = require('./config/database.js');
@@ -21,6 +23,11 @@ const host = process.env.SERVER_HOST || 'localhost';
 if (cluster.isMaster) {
     console.log(`[MASTER ${process.pid}] Starting master process`);
 
+    // Socket.IO cluster adapter primary — must run BEFORE cluster.fork so
+    // workers inherit the IPC channel used to fan out emits across workers.
+    setupSocketClusterPrimary();
+    cluster.setupPrimary({ serialization: 'advanced' });
+
     // Run the coin flip cron job only in the master process
     require('./helpers/coinFlipCron.js');
     
@@ -32,6 +39,9 @@ if (cluster.isMaster) {
 
     // Cleanup ticket uploads cron
     require('./helpers/cleanTicketUploads.js');
+
+    // Cleanup delivered/expired toast events (3 AM IST daily)
+    require('./helpers/cleanToastEvents.js');
 
     // Run log cleanup every 24 hours
     setInterval(() => {
@@ -129,8 +139,13 @@ if (cluster.isMaster) {
         logger.error(`Unhandled Rejection: ${reason}`);
     });
 
+    // Wrap Express in an HTTP server so Socket.IO can attach to the same port.
+    const server = http.createServer(app);
+    const { setupSocketServer } = require('./sockets/socketServer');
+    setupSocketServer(server);
+
     // Start server
-    app.listen(port, () => {
+    server.listen(port, () => {
         console.log(`[WORKER ${process.pid}] App listening at http://${host}:${port}/`);
     });
 }
