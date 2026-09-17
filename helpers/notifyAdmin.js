@@ -16,6 +16,7 @@ const INTERNAL_WEBHOOK_SECRET = process.env.INTERNAL_WEBHOOK_SECRET || '';
 
 async function fireWebhook(type, payload) {
     try {
+        console.log(`[toast-debug] notifyAdmin firing webhook type=${type} url=${ADMIN_BACKEND_URL}/api/internal-notify`);
         // Native fetch (Node 18+).
         const res = await fetch(`${ADMIN_BACKEND_URL}/api/internal-notify`, {
             method: 'POST',
@@ -25,6 +26,7 @@ async function fireWebhook(type, payload) {
             },
             body: JSON.stringify({ type, payload: payload || {} }),
         });
+        console.log(`[toast-debug] notifyAdmin webhook response status=${res.status} type=${type}`);
         if (!res.ok) {
             console.warn(`notifyAdmin webhook non-2xx (type=${type}): ${res.status}`);
         }

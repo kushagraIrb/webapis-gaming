@@ -37,7 +37,10 @@ function setupSocketServer(httpServer) {
     io.use(async (socket, next) => {
         try {
             const token = socket.handshake.auth && socket.handshake.auth.token;
-            if (!token) return next(new Error('unauthorized'));
+            if (!token) {
+                console.warn('[toast-debug] user handshake: no token');
+                return next(new Error('unauthorized'));
+            }
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -47,16 +50,24 @@ function setupSocketServer(httpServer) {
                 'SELECT id, is_verified, status, ip_status, session_token FROM tbl_registration WHERE id = ?',
                 [decoded.id]
             );
-            if (!rows.length) return next(new Error('user_not_found'));
+            if (!rows.length) {
+                console.warn(`[toast-debug] user handshake: user ${decoded.id} not found`);
+                return next(new Error('user_not_found'));
+            }
             const user = rows[0];
-            if (user.session_token !== token) return next(new Error('session_expired'));
+            if (user.session_token !== token) {
+                console.warn(`[toast-debug] user handshake: session_token mismatch for user ${decoded.id}`);
+                return next(new Error('session_expired'));
+            }
             if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
+                console.warn(`[toast-debug] user handshake: user ${decoded.id} blocked (verified=${user.is_verified} status=${user.status} ip_status=${user.ip_status})`);
                 return next(new Error('blocked'));
             }
 
             socket.data.userId = decoded.id;
             next();
         } catch (err) {
+            console.warn(`[toast-debug] user handshake FAILED: ${err.message}`);
             next(new Error('invalid_token'));
         }
     });
@@ -64,6 +75,10 @@ function setupSocketServer(httpServer) {
     io.on('connection', async (socket) => {
         const userId = socket.data.userId;
         socket.join(`user:${userId}`);
+        console.log(`[toast-debug] user ${userId} connected socket=${socket.id} joined room user:${userId}`);
+        socket.on('disconnect', (reason) => {
+            console.log(`[toast-debug] user ${userId} disconnected socket=${socket.id} reason=${reason}`);
+        });
 
         // Replay pending events from the last 24h. Client-side sessionStorage
         // dedupes so re-shown ids don't produce duplicate toasts on flaky ACKs.

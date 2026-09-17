@@ -26,10 +26,25 @@ async function emitToUser(userId, type, payload = {}) {
 // offline the row sits with is_delivered=0 and reconnect replay picks it up.
 async function emitExistingEvent(eventId, userId) {
     const io = getIo();
-    if (!io) return false;
+    if (!io) {
+        console.warn(`[toast-debug] emitExistingEvent: io not ready (event=${eventId} user=${userId})`);
+        return false;
+    }
     const row = await toastEventModel.getById(eventId);
-    if (!row || row.user_id !== userId) return false;
-    io.to(`user:${userId}`).emit('notify:toast', formatEvent(row));
+    if (!row) {
+        console.warn(`[toast-debug] emitExistingEvent: row ${eventId} not found`);
+        return false;
+    }
+    if (row.user_id !== userId) {
+        console.warn(`[toast-debug] emitExistingEvent: user_id mismatch row.user_id=${row.user_id} expected=${userId}`);
+        return false;
+    }
+    const room = `user:${userId}`;
+    try {
+        const roomSockets = await io.in(room).fetchSockets();
+        console.log(`[toast-debug] emit room=${room} event=${eventId} sockets in room=${roomSockets.length}`);
+    } catch (_) { /* ignore */ }
+    io.to(room).emit('notify:toast', formatEvent(row));
     return true;
 }
 
