@@ -1,6 +1,13 @@
 const cron = require('node-cron');
+const moment = require('moment-timezone');
 const db = require('../config/database');
 const { logger } = require('../logger');
+
+// Cutoff strings are IST-formatted because both tables now store created/
+// delivered_at as IST wall-clock. Comparing against server NOW() would skew
+// by the DB session TZ offset.
+const istSubtract = (amount, unit) =>
+    moment().tz('Asia/Kolkata').subtract(amount, unit).format('YYYY-MM-DD HH:mm:ss');
 
 // Two-tier retention:
 //   - delivered rows: 1 days (they served their purpose; keep a week for audit)
@@ -11,16 +18,20 @@ const DELIVERED_RETENTION_DAYS = 1;
 const UNDELIVERED_RETENTION_DAYS = 1;
 
 async function purgeTable(tableName) {
+    const deliveredCutoff = istSubtract(DELIVERED_RETENTION_DAYS, 'days');
+    const undeliveredCutoff = istSubtract(UNDELIVERED_RETENTION_DAYS, 'days');
     const [deliveredResult] = await db.promise().query(
         `DELETE FROM ${tableName}
           WHERE is_delivered = 1
             AND delivered_at IS NOT NULL
-            AND delivered_at < (NOW() - INTERVAL ${DELIVERED_RETENTION_DAYS} DAY)`
+            AND delivered_at < ?`,
+        [deliveredCutoff]
     );
     const [undeliveredResult] = await db.promise().query(
         `DELETE FROM ${tableName}
           WHERE is_delivered = 0
-            AND created < (NOW() - INTERVAL ${UNDELIVERED_RETENTION_DAYS} DAY)`
+            AND created < ?`,
+        [undeliveredCutoff]
     );
     return {
         delivered: deliveredResult.affectedRows,
