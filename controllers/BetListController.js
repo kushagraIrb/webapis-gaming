@@ -3,13 +3,44 @@ const betListService = require('../services/betListService');
 const moment = require('moment-timezone');
 
 class BetController {
+    async getMyBets(req, res) {
+        try {
+            const userId = req.user_id;
+            const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 5);
+            const myBets = await betListService.fetchMyBets(userId, limit);
+
+            return res.status(200).send({
+                status: true,
+                data: myBets,
+                message: 'My bets fetched successfully',
+            });
+        } catch (error) {
+            logger.error(`Error fetching my bets: ${error.message}`, { stack: error.stack });
+
+            return res.status(500).send({
+                status: false,
+                message: 'An error occurred while fetching my bets',
+            });
+        }
+    }
+
     // Fetch bet list for a user
     async getBettingOrderList(req, res) {
         try {
             const userId = req.user_id;
             const { page = 1, perPage = 10 } = req.query;
+            const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+            const winnerStatus = typeof req.query.winnerStatus === 'string' ? req.query.winnerStatus : '';
+            const status = typeof req.query.status === 'string' ? req.query.status : '';
+            const cancelBy = typeof req.query.cancelBy === 'string' ? req.query.cancelBy : '';
     
-            const result = await betListService.fetchBettingOrderList(userId, Number(page), Number(perPage));
+            const result = await betListService.fetchBettingOrderList(
+                userId,
+                Number(page),
+                Number(perPage),
+                search,
+                { winnerStatus, status, cancelBy }
+            );
             const { total_count, betList } = result;
     
             await Promise.all(betList.map(async (bet) => {

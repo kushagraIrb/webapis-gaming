@@ -46,10 +46,27 @@ class LiveBetService {
       }
     }
 
-     static async getLiveMatches(userId) {
+    static async encryptId(id) {
+      const secretKey = crypto.createHash('sha256').update(process.env.SECRET_KEY).digest('base64').substr(0, 32); // The key must be exactly 32 bytes for aes-256-cbc. If your SECRET_KEY is shorter or longer, pad or trim it
+      if (!secretKey) throw new Error('Missing secret key for encryption');
+      
+      // Generate an initialization vector (IV)
+      const iv = Buffer.alloc(16, 0); // 16-byte IV with zeros
+
+      // Create a Cipher instance
+      const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(secretKey), iv);
+
+      // Encrypt the ID
+      let encrypted = cipher.update(String(id), 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+
+      return encrypted;
+    }
+    
+     static async getLiveMatches(userId, search = '') {
         try {
             // Step 1: Fetch matches
-            const matches = await liveBetModel.fetchLiveMatches();
+            const matches = await liveBetModel.fetchLiveMatches(search);
             if (!matches.length) 
                 return [];
     
@@ -683,8 +700,8 @@ class LiveBetService {
             const matches = await liveBetModel.fetchExtraTimeLiveMatches();
             const todayDateTime = moment().tz('Asia/Kolkata'); // Get current time in Asia/Kolkata timezone
     
-            const processedMatches = matches
-                .map(match => {
+            const processedMatches = (await Promise.all(matches
+                .map(async match => {
                     const matchTimes = JSON.parse(match.match_time || '[]');
     
                     // Check if match_date is a valid Date object
@@ -709,10 +726,13 @@ class LiveBetService {
     
                         if (validMatchFound) {
                             return {
+                                id: match.id,
+                                encrypted_id: match.encrypted_id || await this.encryptId(match.id),
                                 match_name: match.match_name,
                                 match_date: match.match_date,
                                 match_time: matchTimes, // Return match_time as an array
-                                win_ratio: JSON.parse(match.win_ratio || '[]') // Return win_ratio as an array
+                                win_ratio: JSON.parse(match.win_ratio || '[]'), // Return win_ratio as an array
+                                is_available: Number(match.is_available) === 1,
                             };
                         } else {
                             console.log(`Match ID: ${match.id} is in the past`);
@@ -722,7 +742,7 @@ class LiveBetService {
                     }
     
                     return null; // Properly filter invalid matches
-                })
+                })))
                 .filter(match => match !== null);
             return processedMatches;
         } catch (error) {

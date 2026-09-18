@@ -26,9 +26,11 @@ class LiveBetController {
                 });
             }
     
+            const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
             const [userPincode, liveMatches] = await Promise.all([
                 liveBetService.getUserPincode(userId),
-                liveBetService.getLiveMatches(userId)
+                liveBetService.getLiveMatches(userId, search)
             ]);
     
             return res.status(200).json({

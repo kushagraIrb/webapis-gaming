@@ -29,7 +29,7 @@ if (cluster.isMaster) {
     cluster.setupPrimary({ serialization: 'advanced' });
 
     // Run the coin flip cron job only in the master process
-    require('./helpers/coinFlipCron.js');
+    // require('./helpers/coinFlipCron.js');
     
     // Cleanup deposit uploads cron
     require('./helpers/cleanDepositUploads.js');

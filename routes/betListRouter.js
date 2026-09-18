@@ -7,6 +7,7 @@ const authenticateToken = require('../helpers/authToken');
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
+router.get('/my-bets', betListController.getMyBets);
 router.get('/', betListController.getBettingOrderList);
 
 module.exports = router;
