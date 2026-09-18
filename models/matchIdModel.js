@@ -125,17 +125,34 @@ class MatchIdModel {
     }
     
     static async getUserMatchIdsData(userId, start, perPage) {
+        // password_unseen is derived so the frontend never has to reason
+        // about the two timestamp columns. has_pending_password_request
+        // disables the "Change Password" button on rows that already have
+        // a pending request; the LEFT JOIN's WHERE-inside-ON keeps other
+        // rows unaffected.
         let query = `
-            SELECT 
+            SELECT
                 umi.match_username, umi.match_password, umi.site_id,
-                ds.site_name,ds.site_link,ds.status
+                ds.site_name, ds.site_link, ds.status,
+                (
+                    umi.password_updated_at IS NOT NULL
+                    AND (
+                        umi.password_seen_at IS NULL
+                        OR umi.password_seen_at < umi.password_updated_at
+                    )
+                ) AS password_unseen,
+                (pcr.id IS NOT NULL) AS has_pending_password_request
             FROM tbl_user_match_ids umi
-            LEFT JOIN tbl_demo_sites ds 
+            LEFT JOIN tbl_demo_sites ds
                 ON ds.id = umi.site_id
+            LEFT JOIN tbl_match_id_password_change_req pcr
+                ON pcr.user_id = umi.user_id
+               AND pcr.site_id = umi.site_id
+               AND pcr.status  = 'pending'
             WHERE umi.user_id = ?
             ORDER BY umi.id DESC
         `;
-    
+
         if (perPage !== null && start !== null) {
             query += ` LIMIT ?, ?`;
             const [rows] = await db.promise().query(query, [
@@ -145,7 +162,7 @@ class MatchIdModel {
             ]);
             return rows;
         }
-    
+
         const [rows] = await db.promise().query(query, [userId]);
         return rows;
     }
