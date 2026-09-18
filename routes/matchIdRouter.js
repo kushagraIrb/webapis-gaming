@@ -27,4 +27,11 @@ router.get('/transfer-history', matchIdController.transferHistory);
 // Cancel Match ID & Transfer Request
 router.post('/cancel-req', matchIdController.cancelTransferRequest);
 
+// Match ID Password Change Request
+// - create: user opens a pending request for one of their own Match IDs
+// - ack:    user browser confirms it displayed the updated password so the
+//           blinking "NEW" badge doesn't reappear on subsequent visits
+router.post('/change-password-req', matchIdController.createPasswordChangeReq);
+router.post('/mark-password-seen', matchIdController.markPasswordSeen);
+
 module.exports = router;

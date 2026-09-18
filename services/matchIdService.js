@@ -1,5 +1,7 @@
 const matchIdModel = require('../models/matchIdModel');
+const matchIdPasswordChangeReqModel = require('../models/matchIdPasswordChangeReqModel');
 const sendMail = require('../helpers/sendMail');
+const { notifyAdmin } = require('../helpers/notifyAdmin');
 
 class MatchIdService {
     static async demoSitesListing(userId, page, perPage) {
@@ -223,6 +225,86 @@ class MatchIdService {
         } catch (error) {
             console.error('Error in Support Message Service:', error.message);
             throw new Error('Failed to send support message');
+        }
+    }
+
+    // ================= MATCH ID PASSWORD CHANGE REQUEST =================
+    //
+    // Create a pending password-change request for the caller's own Match ID
+    // on `siteId`. Validates:
+    //   - the user actually owns a Match ID for that site (backend guard,
+    //     required by spec § 1)
+    //   - no other pending request already exists for the same (user, site)
+    //
+    // Fires an admin-side toast via notifyAdmin('match_id_password_change_request', {...})
+    // so admins with password_change_request_access see it live.
+    //
+    // Returns { success: boolean, message: string, code?: 'not_found'|'duplicate' }
+    static async createPasswordChangeReq(userId, siteId) {
+        try {
+            const uid = Number(userId);
+            const sid = Number(siteId);
+            if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(sid) || sid <= 0) {
+                return { success: false, message: 'Invalid request', code: 'invalid' };
+            }
+
+            const owns = await matchIdPasswordChangeReqModel.userOwnsMatchIdForSite(uid, sid);
+            if (!owns) {
+                return {
+                    success: false,
+                    message: 'Match ID for this site not found on your account',
+                    code: 'not_found'
+                };
+            }
+
+            const hasPending = await matchIdPasswordChangeReqModel.hasPendingRequest(uid, sid);
+            if (hasPending) {
+                return {
+                    success: false,
+                    message: 'A password change request is already pending for this Match ID',
+                    code: 'duplicate'
+                };
+            }
+
+            // getUserSiteDetails returns first_name/last_name/phone/site_name — we
+            // reuse it here so the notifyAdmin payload can carry the site name.
+            const details = await matchIdModel.getUserSiteDetails(uid, sid);
+
+            const inserted = await matchIdPasswordChangeReqModel.insert(uid, sid);
+
+            // Fire-and-forget admin toast (never throws to caller).
+            notifyAdmin('match_id_password_change_request', {
+                user_id: uid,
+                site_id: sid,
+                site_name: details?.site_name || '',
+                request_id: inserted.id,
+            });
+
+            return {
+                success: true,
+                message: 'Password change request submitted successfully',
+            };
+        } catch (error) {
+            console.error('Error in Password Change Req Service:', error.message);
+            throw new Error('Failed to submit password change request');
+        }
+    }
+
+    // Idempotent acknowledgement — user browser calls this after rendering
+    // the updated password row. Returns quietly whether or not there was
+    // anything to mark seen.
+    static async markPasswordSeen(userId, siteId) {
+        try {
+            const uid = Number(userId);
+            const sid = Number(siteId);
+            if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(sid) || sid <= 0) {
+                return { success: false, message: 'Invalid request' };
+            }
+            await matchIdPasswordChangeReqModel.markPasswordSeen(uid, sid);
+            return { success: true, message: 'ok' };
+        } catch (error) {
+            console.error('Error in Password Seen Service:', error.message);
+            throw new Error('Failed to acknowledge password update');
         }
     }
 }
