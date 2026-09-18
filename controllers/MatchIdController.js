@@ -372,6 +372,83 @@ class MatchIdController {
             });
         }
     }
+
+    // POST /api/match-id/change-password-req
+    // Body: { site_id }
+    //   200 → { status: true, message }
+    //   400 → validation / duplicate / not-owner
+    //   500 → unexpected
+    async createPasswordChangeReq(req, res) {
+        try {
+            const userId = req.user_id;
+            const { site_id } = req.body || {};
+
+            if (!site_id) {
+                return res.status(400).send({
+                    status: false,
+                    message: 'site_id is required',
+                });
+            }
+
+            const result = await matchIdService.createPasswordChangeReq(userId, site_id);
+
+            if (!result.success) {
+                // 400 for validation/duplicate/not_found so the frontend can
+                // show the message directly. 403 would be technically nicer
+                // for the ownership case but 400 keeps the response shape
+                // simpler (and doesn't reveal which sites the user does own).
+                return res.status(400).send({
+                    status: false,
+                    message: result.message,
+                });
+            }
+
+            return res.status(200).send({
+                status: true,
+                message: result.message,
+            });
+        } catch (error) {
+            console.error('Error creating password change request:', error.message);
+            logger.error(`Error creating password change request: ${error.message}`, { stack: error.stack });
+
+            return res.status(500).send({
+                status: false,
+                message: 'An error occurred while submitting the request',
+                error: error.message,
+            });
+        }
+    }
+
+    // POST /api/match-id/mark-password-seen
+    // Body: { site_id }
+    // Idempotent — always returns 200 on well-formed input, even if the
+    // caller had nothing to mark seen. The endpoint only ever touches the
+    // caller's own tbl_user_match_ids row (WHERE user_id = req.user_id).
+    async markPasswordSeen(req, res) {
+        try {
+            const userId = req.user_id;
+            const { site_id } = req.body || {};
+
+            if (!site_id) {
+                return res.status(400).send({
+                    status: false,
+                    message: 'site_id is required',
+                });
+            }
+
+            await matchIdService.markPasswordSeen(userId, site_id);
+            return res.status(200).send({ status: true, message: 'ok' });
+        } catch (error) {
+            console.error('Error marking password seen:', error.message);
+            logger.error(`Error marking password seen: ${error.message}`, { stack: error.stack });
+
+            return res.status(500).send({
+                status: false,
+                message: 'An error occurred while acknowledging the update',
+                error: error.message,
+            });
+        }
+    }
 }
 
 module.exports = new MatchIdController();
