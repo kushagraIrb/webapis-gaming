@@ -40,7 +40,16 @@ class LiveBetModel {
         return result[0];
     }
     
-    static async fetchLiveMatches() {
+    static async fetchLiveMatches(search = '') {
+        const normalizedSearch = String(search || '').trim();
+        const searchCondition = normalizedSearch
+            ? `AND (
+                    m.match_name LIKE ?
+                    OR t1.team_name LIKE ?
+                    OR t2.team_name LIKE ?
+                )`
+            : '';
+
         const query = `
             SELECT 
                 m.id, m.encrypted_id,
@@ -72,12 +81,17 @@ class LiveBetModel {
                             )
                         ),
                         '%Y-%m-%d %H:%i'
-                    ) > CONVERT_TZ(NOW(), '+00:00', '+04:30')
+                    ) > CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30')
                 )
+                ${searchCondition}
             ORDER BY m.match_date ASC, m.match_time ASC;
         `;
     
-        const [rows] = await db.promise().query(query);
+        const searchValue = `%${normalizedSearch}%`;
+        const params = normalizedSearch
+            ? [searchValue, searchValue, searchValue]
+            : [];
+        const [rows] = await db.promise().query(query, params);
         return rows;
     }
     
@@ -635,7 +649,51 @@ class LiveBetModel {
     }
 
     static async fetchExtraTimeLiveMatches() {
-        const query = `SELECT id, match_name, match_date, match_time, match_title, win_ratio, max_bet FROM tbl_upcoming_match WHERE status = 1 AND cancel = 1 AND isLive = 1 AND ext_time = 1 ORDER BY match_date ASC, match_time ASC`;
+        const query = `
+            SELECT
+                id,
+                encrypted_id,
+                match_name,
+                match_date,
+                match_time,
+                match_title,
+                win_ratio,
+                max_bet,
+                status,
+                cancel,
+                isLive,
+                ext_time,
+                CASE
+                    WHEN status = 1
+                        AND cancel = 1
+                        AND isLive = 1
+                        AND ext_time = 1
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM tbl_winner winner_match
+                            WHERE winner_match.match_id = tbl_upcoming_match.id
+                        )
+                        AND STR_TO_DATE(
+                            CONCAT(
+                                match_date, ' ',
+                                JSON_UNQUOTE(
+                                    JSON_EXTRACT(
+                                        match_time,
+                                        CONCAT('$[', JSON_LENGTH(match_time) - 1, ']')
+                                    )
+                                )
+                            ),
+                            '%Y-%m-%d %H:%i'
+                        ) > CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30')
+                    THEN 1
+                    ELSE 0
+                END AS is_available
+            FROM tbl_upcoming_match
+            WHERE status = 1
+                AND cancel = 1
+                AND isLive = 1
+                AND ext_time = 1
+            ORDER BY match_date ASC, match_time ASC`;
 
         try {
             const [results] = await db.promise().query(query);
