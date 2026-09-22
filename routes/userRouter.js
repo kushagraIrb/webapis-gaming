@@ -17,6 +17,7 @@ router.put('/update-name', userController.updateUserName);
 router.get('/fetch-state', userController.fetchUserState);
 router.post('/register', signUpValidation, userController.register);
 router.post('/login', loginValidation, userController.login);
+router.post('/google', userController.googleAuth);
 router.post('/reset-link', userController.resetLink);
 router.post('/forgot-password', userController.forgotPassword);
 router.post('/regenerate-access-token', userController.regenerateAccessToken);
