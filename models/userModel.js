@@ -62,6 +62,37 @@ class UserModel {
         return result;
     }
 
+    static async findUserByGoogleId(googleId) {
+        const [result] = await db.promise().query(
+            `SELECT * FROM tbl_registration WHERE google_id = ? LIMIT 1`,
+            [googleId]
+        );
+        return result[0] || null;
+    }
+
+    static async linkGoogleAccount(userId, googleId) {
+        const [result] = await db.promise().query(
+            `UPDATE tbl_registration
+             SET google_id = ?, auth_provider = 'google', modified = ?
+             WHERE id = ?`,
+            [googleId, moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"), userId]
+        );
+        return result;
+    }
+
+    static async createGoogleUser({ firstName, lastName, email, hashedPassword, phone, googleId, ipAddress }) {
+        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+        const [result] = await db.promise().query(
+            `INSERT INTO tbl_registration
+             (first_name, last_name, email, password, phone, pincode, state,
+              is_eighteen, is_verified, isRefer, user_status, created, modified,
+              ip_address, status, ip_status, bonus_league_id, google_id, auth_provider)
+             VALUES (?, ?, ?, ?, ?, NULL, NULL, 1, 1, 0, 'active', ?, ?, ?, 1, 1, 1, ?, 'google')`,
+            [firstName, lastName || null, email, hashedPassword, phone, istTime, istTime, ipAddress, googleId]
+        );
+        return result;
+    }
+
     static async findUserByPhone(phone) {
         const [result] = await db.promise().query(
             `SELECT * FROM tbl_registration WHERE phone = ?`,
