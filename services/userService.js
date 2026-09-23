@@ -15,16 +15,9 @@ const crypto = require('crypto');
 
 class UserService {
 
-    static async googleAuth({ credential, phone }, ipAddress) {
+    static async verifyGoogleCredential(credential) {
         if (!credential) {
             const err = new Error('Google credential is required.');
-            err.statusCode = 400;
-            throw err;
-        }
-
-        const normalizedPhone = String(phone || '').replace(/\D/g, '');
-        if (!/^\d{10}$/.test(normalizedPhone)) {
-            const err = new Error('A valid 10-digit phone number is required.');
             err.statusCode = 400;
             throw err;
         }
@@ -54,35 +47,10 @@ class UserService {
             throw err;
         }
 
-        let user = await userModel.findUserByGoogleId(googleUser.sub);
-        if (!user) {
-            const emailUsers = await userModel.findUserByEmail(email);
-            if (emailUsers.length) {
-                user = emailUsers[0];
-                await userModel.linkGoogleAccount(user.id, googleUser.sub);
-            } else {
-                const existingPhone = await userModel.findUserByPhone(normalizedPhone);
-                if (existingPhone.length) {
-                    const err = new Error('User already exists with same phone number.');
-                    err.statusCode = 409;
-                    throw err;
-                }
+        return googleUser;
+    }
 
-                const randomPassword = crypto.randomBytes(32).toString('hex');
-                const hashedPassword = await bcrypt.hash(randomPassword, 10);
-                const newUser = await userModel.createGoogleUser({
-                    firstName: String(googleUser.given_name || googleUser.name || 'Gaming').slice(0, 25),
-                    lastName: String(googleUser.family_name || '').slice(0, 25),
-                    email,
-                    hashedPassword,
-                    phone: normalizedPhone,
-                    googleId: googleUser.sub,
-                    ipAddress
-                });
-                user = { id: newUser.insertId, status: 1, ip_status: 1, is_verified: 1 };
-            }
-        }
-
+    static async issueGoogleSession(user) {
         if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
             const err = new Error('Your login Id is blocked, please contact the administrator.');
             err.statusCode = 403;
@@ -94,6 +62,59 @@ class UserService {
         await userModel.updateSessionToken(user.id, accessToken, refreshToken);
 
         return { msg: 'Google login successful!', accessToken, refreshToken };
+    }
+
+    static async googleRegister({ credential, phone }, ipAddress) {
+        const googleUser = await this.verifyGoogleCredential(credential);
+        const email = String(googleUser.email).trim().toLowerCase();
+
+        const linkedUser = await userModel.findUserByGoogleId(googleUser.sub);
+        const emailUsers = await userModel.findUserByEmail(email);
+        if (linkedUser || emailUsers.length) {
+            const err = new Error('This Google account is already registered. Please use Google login.');
+            err.statusCode = 409;
+            throw err;
+        }
+
+        const normalizedPhone = String(phone || '').replace(/\D/g, '');
+        if (!/^\d{10}$/.test(normalizedPhone)) {
+            const err = new Error('A valid 10-digit phone number is required for first-time Google registration.');
+            err.statusCode = 400;
+            throw err;
+        }
+
+        const existingPhone = await userModel.findUserByPhone(normalizedPhone);
+        if (existingPhone.length) {
+            const err = new Error('User already exists with same phone number.');
+            err.statusCode = 409;
+            throw err;
+        }
+
+        const randomPassword = crypto.randomBytes(32).toString('hex');
+        const hashedPassword = await bcrypt.hash(randomPassword, 10);
+        const newUser = await userModel.createGoogleUser({
+            firstName: String(googleUser.given_name || googleUser.name || 'Gaming').slice(0, 25),
+            lastName: String(googleUser.family_name || '').slice(0, 25),
+            email,
+            hashedPassword,
+            phone: normalizedPhone,
+            googleId: googleUser.sub,
+            ipAddress
+        });
+
+        return this.issueGoogleSession({ id: newUser.insertId, status: 1, ip_status: 1, is_verified: 1 });
+    }
+
+    static async googleLogin({ credential }) {
+        const googleUser = await this.verifyGoogleCredential(credential);
+        const user = await userModel.findUserByGoogleId(googleUser.sub);
+        if (!user) {
+            const err = new Error('No Google account found. Please register first.');
+            err.statusCode = 404;
+            throw err;
+        }
+
+        return this.issueGoogleSession(user);
     }
 
     // Fetch user details based on jwt token

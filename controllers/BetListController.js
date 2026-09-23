@@ -6,7 +6,7 @@ class BetController {
     async getMyBets(req, res) {
         try {
             const userId = req.user_id;
-            const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 5);
+            const limit = Math.min(Math.max(Number(req.query.limit) || 6, 1), 6);
             const myBets = await betListService.fetchMyBets(userId, limit);
 
             return res.status(200).send({
@@ -44,10 +44,14 @@ class BetController {
             const { total_count, betList } = result;
     
             await Promise.all(betList.map(async (bet) => {
-                const isMatchWinnerAnnounced = await betListService.isMatchWinnerAnnounced(bet.match_id);
-                bet.winSt = isMatchWinnerAnnounced
-                    ? (await betListService.winnerTeamByMatch(bet.match_id, bet.team_id) ? 'Winner' : 'Lost')
-                    : (bet.cancel_by === 'By Admin' ? 'Refund' : 'N/A');
+                if (bet.cancel_by === 'By Admin') {
+                    bet.winSt = 'Refund';
+                } else {
+                    const isMatchWinnerAnnounced = await betListService.isMatchWinnerAnnounced(bet.match_id);
+                    bet.winSt = isMatchWinnerAnnounced
+                        ? (await betListService.winnerTeamByMatch(bet.match_id, bet.team_id) ? 'Winner' : 'Lost')
+                        : 'N/A';
+                }
     
                 const dateBy = bet.cancel_by !== '' ? bet.cancel_date : bet.bet_date;
                 // const dateBy2 = new Date(dateBy).getTime();
