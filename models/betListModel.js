@@ -3,6 +3,7 @@ const db = require('../config/database');
 class BetModel {
     static getWinnerStatusExpression() {
         return `CASE
+            WHEN bt.cancel_by = 'By Admin' THEN 'Refund'
             WHEN EXISTS (
                 SELECT 1
                 FROM tbl_winner winner_match
@@ -16,7 +17,6 @@ class BetModel {
                 ) THEN 'Winner'
                 ELSE 'Lost'
             END
-            WHEN bt.cancel_by = 'By Admin' THEN 'Refund'
             ELSE 'N/A'
         END`;
     }
@@ -103,9 +103,9 @@ class BetModel {
         }
     }
 
-    static async getMyBets(userId, limit = 5) {
+    static async getMyBets(userId, limit = 6) {
         try {
-            const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 5);
+            const safeLimit = Math.min(Math.max(Number(limit) || 6, 1), 6);
             const query = `
                 SELECT
                     bt.bet_id,
@@ -145,6 +145,7 @@ class BetModel {
                         ELSE 0
                     END AS is_live,
                     CASE
+                        WHEN bt.cancel_by = 'By Admin' THEN 'refunded'
                         WHEN bt.status <> 1 OR mt.cancel <> 1 THEN 'cancelled'
                         WHEN EXISTS (
                             SELECT 1
