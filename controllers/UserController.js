@@ -186,6 +186,47 @@ class UserController {
         }
     }
 
+    async googleRegister(req, res) {
+        try {
+            const clientIp = requestIp.getClientIp(req)?.replace(/^::ffff:/, '');
+            const { accessToken, refreshToken, msg } = await userService.googleRegister(req.body, clientIp);
+
+            res.cookie('refreshToken', refreshToken, {
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 30 * 24 * 60 * 60 * 1000
+            });
+
+            return res.status(200).send({ msg, accessToken });
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+            if (statusCode === 500) {
+                logger.error(`Google authentication error: ${error.message}`, { stack: error.stack });
+            }
+            return res.status(statusCode).send({ msg: error.message || 'Google registration failed.' });
+        }
+    }
+
+    async googleLogin(req, res) {
+        try {
+            const { accessToken, refreshToken, msg } = await userService.googleLogin(req.body);
+
+            res.cookie('refreshToken', refreshToken, {
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 30 * 24 * 60 * 60 * 1000
+            });
+
+            return res.status(200).send({ msg, accessToken });
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+            if (statusCode === 500) {
+                logger.error(`Google login error: ${error.message}`, { stack: error.stack });
+            }
+            return res.status(statusCode).send({ msg: error.message || 'Google login failed.' });
+        }
+    }
+
     // Login Method
     async login(req, res) {
         let apiResponseMsg = '';

@@ -39,7 +39,7 @@ class BetService {
         return Number.isFinite(ratio) ? ratio : null;
     }
 
-    static async fetchMyBets(userId, limit = 5) {
+    static async fetchMyBets(userId, limit = 6) {
         const bets = await betListModel.getMyBets(userId, limit);
 
         return bets.map((bet) => {
