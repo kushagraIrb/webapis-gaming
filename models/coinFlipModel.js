@@ -4,6 +4,18 @@ const moment = require('moment');
 
 const { logQuery } = require('../helpers/dbLogger');
 
+/*
+| Every read/write below that participates in coin-flip settlement takes
+| an OPTIONAL trailing `connection` param. Passing nothing (every existing
+| caller) preserves today's exact behavior -- a fresh pooled connection per
+| call via db.promise(). Passing a connection obtained from
+| db.promise().getConnection() (see CoinFlipService.settleEligibleMatch)
+| routes the query through that ONE reserved, transaction-bound connection
+| instead, so the whole settlement (match-row lock, result decision,
+| payout, forced-loss bookkeeping) commits or rolls back together.
+*/
+const exec = (connection) => connection || db.promise();
+
 class CoinFlipModel {
     static async fetchCurrentMatch() {
         const query = `
@@ -31,16 +43,16 @@ class CoinFlipModel {
         }
     }
 
-    static async fetchMinBetAmount() {
+    static async fetchMinBetAmount(connection) {
         const query = `
-            SELECT bet_amount 
-            FROM tbl_bet_amount 
-            ORDER BY id DESC 
+            SELECT bet_amount
+            FROM tbl_bet_amount
+            ORDER BY id DESC
             LIMIT 1
         `;
 
         try {
-            const [rows] = await db.promise().query(query);
+            const [rows] = await exec(connection).query(query);
             return rows[0]?.bet_amount || null;
         } catch (error) {
             console.error('Error in fetching min bet amount:', error.message);
@@ -116,27 +128,27 @@ class CoinFlipModel {
         // return result[0]?.on_off_value || '1';
     }
 
-    static async getMaxTransactionId(userId) {
+    static async getMaxTransactionId(userId, connection) {
         const query = `SELECT MAX(trans_id) AS max_trans_id FROM tbl_transaction_history WHERE user_id = ?`;
-        const [result] = await db.promise().query(query, [userId]);
+        const [result] = await exec(connection).query(query, [userId]);
         return result ? result[0].max_trans_id : null;
     }
 
-    static async getWalletAmountByTransactionId(transId) {
+    static async getWalletAmountByTransactionId(transId, connection) {
         const query = `SELECT total_amount FROM tbl_transaction_history WHERE trans_id = ?`;
-        const [result] = await db.promise().query(query, [transId]);
+        const [result] = await exec(connection).query(query, [transId]);
         return result ? result[0].total_amount : 0;
     }
 
-    static async getMaxBonusId(userId) {
+    static async getMaxBonusId(userId, connection) {
         const query = `SELECT MAX(bonus_id) AS max_bonus_id FROM tbl_bonus_history WHERE user_id = ?`;
-        const [result] = await db.promise().query(query, [userId]);
+        const [result] = await exec(connection).query(query, [userId]);
         return result ? result[0].max_bonus_id : null;
     }
 
-    static async getBonusAmountByBonusId(bonusId) {
+    static async getBonusAmountByBonusId(bonusId, connection) {
         const query = `SELECT total_bonus FROM tbl_bonus_history WHERE bonus_id = ?`;
-        const [result] = await db.promise().query(query, [bonusId]);
+        const [result] = await exec(connection).query(query, [bonusId]);
         return result ? result[0].total_bonus : 0;
     }
 
@@ -528,78 +540,79 @@ class CoinFlipModel {
                 ORDER BY id DESC
                 LIMIT 1
             `;
-    
+
             const [rows] = await logQuery(
                 'getEligibleMatch',
                 query,
                 [],
                 () => db.promise().query(query)
             );
-    
+
             return rows.length ? rows[0] : null;
-    
+
         } catch (error) {
             console.error("Error in getEligibleMatch:", error.message);
             throw error;
         }
     }
 
-    static async updateMatchResult(matchId, result) {
+    static async updateMatchResult(matchId, result, connection) {
         const query = `
             UPDATE tbl_upcoming_match_coinflip
             SET status = 2, final_result = ?
             WHERE id = ?
         `;
         const params = [result, matchId];
-    
+
         const [res] = await logQuery(
             'updateMatchResult',
             query,
             params,
-            () => db.promise().query(query, params)
+            () => exec(connection).query(query, params)
         );
-    
+
         return res.affectedRows > 0;
     }
 
-    static async getWinningUsers(matchId, result) {
+    static async getWinningUsers(matchId, result, connection) {
         const query = `
-            SELECT user_id, amount, bet_id, prediction 
-            FROM tbl_coin_bet 
+            SELECT user_id, amount, bet_id, prediction
+            FROM tbl_coin_bet
             WHERE match_id = ? AND status = 1 AND prediction = ?
             GROUP BY user_id
         `;
         const params = [matchId, result];
-    
+
         const [rows] = await logQuery(
             'getWinningUsers',
             query,
             params,
-            () => db.promise().query(query, params)
+            () => exec(connection).query(query, params)
         );
-    
+
         return rows;
     }
 
-    static async insertCoinWinner(data) {
+    static async insertCoinWinner(data, connection) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-    
+        const runner = exec(connection);
+
         const checkQuery = `
             SELECT COUNT(*) AS count
             FROM tbl_coin_winner
             WHERE match_id = ? AND userBy = ?
         `;
         const checkParams = [data.match_id, data.userBy];
-    
+
         const [existingWinner] = await logQuery(
             'insertCoinWinner-CHECK',
             checkQuery,
             checkParams,
-            () => db.promise().query(checkQuery, checkParams)
+            () => runner.query(checkQuery, checkParams)
         );
-    
+
         if (existingWinner[0].count > 0) return false;
-    
+
         const insertQuery = `
             INSERT INTO tbl_coin_winner (win_ratio, match_id, team_id, userBy, win_date)
             VALUES (?, ?, 0, ?, ?)
@@ -610,42 +623,43 @@ class CoinFlipModel {
             data.userBy,
             istTime
         ];
-    
+
         const [res] = await logQuery(
             'insertCoinWinner-INSERT',
             insertQuery,
             insertParams,
-            () => db.promise().query(insertQuery, insertParams)
+            () => runner.query(insertQuery, insertParams)
         );
-    
+
         return res.insertId;
     }
 
-    static async insertTransaction(data) {
+    static async insertTransaction(data, connection) {
         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-    
+        const runner = exec(connection);
+
         const checkQuery = `
             SELECT COUNT(*) AS count
             FROM tbl_transaction_history
             WHERE user_id = ? AND coin_match_id = ? AND t_status = 'Win'
         `;
         const checkParams = [data.user_id, data.coin_match_id];
-    
+
         const [existingWin] = await logQuery(
             'insertTransaction-CHECK',
             checkQuery,
             checkParams,
-            () => db.promise().query(checkQuery, checkParams)
+            () => runner.query(checkQuery, checkParams)
         );
-    
+
         if (existingWin[0].count > 0) return;
-    
+
         const insertQuery = `
-            INSERT INTO tbl_transaction_history 
+            INSERT INTO tbl_transaction_history
             (bet_id, match_id, coin_match_id, win_id, user_id, credit_amount, total_amount, type, t_status, transaction_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
-    
+
         const insertParams = [
             data.bet_id,
             data.match_id,
@@ -658,28 +672,28 @@ class CoinFlipModel {
             data.t_status,
             istTime
         ];
-    
+
         await logQuery(
             'insertTransaction-INSERT',
             insertQuery,
             insertParams,
-            () => db.promise().query(insertQuery, insertParams)
+            () => runner.query(insertQuery, insertParams)
         );
     }
 
-    static async updateCoinReport(betId, winAmount) {
+    static async updateCoinReport(betId, winAmount, connection) {
         const query = `
             UPDATE tbl_coin_report
             SET win_amount = ?
             WHERE bet_id = ?
         `;
         const params = [winAmount, betId];
-    
+
         await logQuery(
             'updateCoinReport',
             query,
             params,
-            () => db.promise().query(query, params)
+            () => exec(connection).query(query, params)
         );
     }
 
@@ -784,12 +798,13 @@ class CoinFlipModel {
         );
     }
     
-    static async getHighestBidder(matchId) {
+    static async getHighestBidder(matchId, connection) {
         const query = `
-            SELECT 
+            SELECT
                 b.user_id,
                 b.prediction,
                 SUM(b.amount) AS total_amount,
+                su.mode,
                 su.forced_loss_count,
                 su.is_active
             FROM tbl_coin_bet b
@@ -798,7 +813,7 @@ class CoinFlipModel {
                 AND su.is_active = 1
             WHERE b.match_id = ?
               AND b.status = 1
-            GROUP BY b.user_id, b.prediction, su.forced_loss_count, su.is_active
+            GROUP BY b.user_id, b.prediction, su.mode, su.forced_loss_count, su.is_active
             HAVING total_amount = (
                 SELECT MAX(total)
                 FROM (
@@ -818,56 +833,84 @@ class CoinFlipModel {
                 RAND()
             LIMIT 1
         `;
-    
+
         const [rows] = await logQuery(
                 'getHighestBidder',
                 query,
                 [matchId, matchId],
-                () => db.promise().query(query, [matchId, matchId])
+                () => exec(connection).query(query, [matchId, matchId])
             );
         return rows.length ? rows[0] : null;
     }
-    
+
     static async getSelectedUser(userId) {
         const query = `SELECT * FROM tbl_coin_selected_users WHERE user_id = ? AND is_active = 1`;
-    
+
         const [rows] = await logQuery(
             'getSelectedUser',
             query,
             [userId],
             () => db.promise().query(query, [userId])
         );
-    
+
         return rows.length ? rows[0] : null;
     }
-    
-    static async incrementForcedLoss(userId) {
-        const query = `
+
+    /*
+    | incrementForcedLoss(userId, connection)
+    |
+    | Returns the row's forced_loss_count AFTER the increment (via
+    | UPDATE ... then a follow-up SELECT in the same connection/
+    | transaction) so callers can make the stop-condition decision off an
+    | authoritative post-increment value instead of computing
+    | "count-we-read-earlier + 1" -- the previous version of this settle
+    | path did the latter, which is correct only when nothing else could
+    | have incremented the same row between the read and the write. Now
+    | that this runs inside a transaction with the match row locked, only
+    | one settlement can be touching a given user's forced_loss_count at
+    | a time, so reading it back is both safe and the more defensive
+    | choice if that assumption ever changes.
+    */
+    static async incrementForcedLoss(userId, connection) {
+        const runner = exec(connection);
+        const updateQuery = `
             UPDATE tbl_coin_selected_users
             SET forced_loss_count = forced_loss_count + 1
             WHERE user_id = ? AND is_active = 1
        `;
-    
+
         await logQuery(
             'incrementForcedLoss',
-            query,
+            updateQuery,
             [userId],
-            () => db.promise().query(query, [userId])
+            () => runner.query(updateQuery, [userId])
         );
+
+        const readQuery = `
+            SELECT forced_loss_count FROM tbl_coin_selected_users
+            WHERE user_id = ? AND is_active = 1
+        `;
+        const [rows] = await logQuery(
+            'incrementForcedLoss-READBACK',
+            readQuery,
+            [userId],
+            () => runner.query(readQuery, [userId])
+        );
+        return rows.length ? rows[0].forced_loss_count : null;
     }
-    
-    static async softRemoveSelectedUser(userId) {
+
+    static async softRemoveSelectedUser(userId, connection) {
         const query = `
             UPDATE tbl_coin_selected_users
             SET is_active = 0, removed_at = NOW()
             WHERE user_id = ?
         `;
-    
+
         await logQuery(
             'softRemoveSelectedUser',
             query,
             [userId],
-            () => db.promise().query(query, [userId])
+            () => exec(connection).query(query, [userId])
         );
     }
 

@@ -290,18 +290,15 @@ class CoinFlipController {
 
             shouldCreateNextMatch = true;
 
-            // Step 2: Winner logic
-            const matchResult = await coinFlipService.getEligibleMatch();
+            // Step 2: Decide the result AND pay winners atomically -- one
+            // DB transaction with the match row locked for its duration,
+            // so a second concurrent hit to this endpoint for the same
+            // match (overlapping cron tick, retried call) can't decide
+            // twice or double-pay. See CoinFlipService.settleEligibleMatch.
+            const matchResult = await coinFlipService.settleEligibleMatch();
 
-            if (matchResult) {
-                try {
-                    // console.log("✅ Giving winnings...");
-                    await coinFlipService.giveWinnings(matchResult.match, matchResult.result);
-                } catch (err) {
-                    console.error("❌ Winnings failed:", err.message);
-                }
-            } else {
-                console.log("⚠️ No eligible match found");
+            if (!matchResult) {
+                console.log("⚠️ No eligible match found (or already settled by another request)");
             }
 
             return res.status(200).send('Match processed');

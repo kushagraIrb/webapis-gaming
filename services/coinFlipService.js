@@ -87,32 +87,32 @@ class CoinFlipService {
     }
   }
 
-  static async calculateWalletAmount(userId) {
+  static async calculateWalletAmount(userId, connection) {
     try {
       // Step 1: Get the maximum transaction ID for the user
-      const maxTransId = await coinFlipModel.getMaxTransactionId(userId);
+      const maxTransId = await coinFlipModel.getMaxTransactionId(userId, connection);
       if (!maxTransId) {
         return 0; // No transactions found
       }
 
       // Step 2: Get the wallet amount for the maximum transaction ID
-      const walletAmount = await coinFlipModel.getWalletAmountByTransactionId(maxTransId);
+      const walletAmount = await coinFlipModel.getWalletAmountByTransactionId(maxTransId, connection);
       return walletAmount;
     } catch (error) {
       throw new Error('Error calculating wallet amount');
     }
   }
 
-  static async calculateBonus(userId) {
+  static async calculateBonus(userId, connection) {
     try {
       // Step 1: Get the maximum bonus ID for the user
-      const maxBonusId = await coinFlipModel.getMaxBonusId(userId);
+      const maxBonusId = await coinFlipModel.getMaxBonusId(userId, connection);
       if (!maxBonusId) {
         return 0; // No bonuses found
       }
 
       // Step 2: Get the bonus amount for the maximum bonus ID
-      const bonusAmount = await coinFlipModel.getBonusAmountByBonusId(maxBonusId);
+      const bonusAmount = await coinFlipModel.getBonusAmountByBonusId(maxBonusId, connection);
       return bonusAmount;
     } catch (error) {
       throw new Error('Error fetching bonus amount');
@@ -421,11 +421,170 @@ class CoinFlipService {
         return { match, result };
     }
 
-  static async giveWinnings(match, result) {
+  /*
+  | settleEligibleMatch()
+  |
+  | Combines what used to be two separate, unsynchronized calls --
+  | getEligibleMatch() (decide + write the result) and giveWinnings()
+  | (pay winners) -- into one critical section, serialized against any
+  | other concurrent settlement attempt.
+  |
+  | IMPORTANT: mutual exclusion here is a MySQL/MariaDB named advisory
+  | lock (GET_LOCK/RELEASE_LOCK), NOT a row lock inside a DB transaction.
+  | An earlier version of this method used SELECT ... FOR UPDATE inside
+  | a BEGIN/COMMIT transaction, on the assumption that would serialize
+  | concurrent callers the way it does on InnoDB. It does not: verified
+  | directly against this database that tbl_upcoming_match_coinflip,
+  | tbl_coin_bet, tbl_coin_report, tbl_coin_winner and
+  | tbl_transaction_history are all MyISAM, which has no transaction or
+  | row-locking support at all -- BEGIN/COMMIT/FOR UPDATE on those tables
+  | are silent no-ops. A concurrency test (two simultaneous calls against
+  | the same match) proved this: both calls ran the decision logic, and
+  | only the pre-existing check-then-insert duplicate guards in
+  | insertCoinWinner/insertTransaction happened to prevent a double
+  | payout -- which is luck, not a guarantee, since MyISAM gives those
+  | checks no isolation either.
+  |
+  | A named lock has no such dependency -- it's a server-level primitive
+  | that works regardless of any table's storage engine, so it actually
+  | delivers the serialization the task asked for, on the schema as it
+  | exists today. tbl_coin_selected_users IS InnoDB, so the forced-loss
+  | counter increment and the stop-condition update are additionally
+  | protected by real row locks; the BEGIN/COMMIT here still wraps that
+  | part correctly, it just isn't what's preventing double-settlement of
+  | the match itself.
+  |
+  | Converting the MyISAM tables to InnoDB would let a real DB
+  | transaction do this job instead, and would bring coin-flip in line
+  | with tbl_deposit_list/tbl_withdrawal (already InnoDB) -- but that's a
+  | separate, higher-blast-radius decision (full table rewrite on live
+  | ledger tables) deliberately left out of this change pending explicit
+  | sign-off.
+  |
+  | Returns null if there's no eligible match, another call already
+  | settled it, or the lock could not be acquired within the timeout
+  | (treated as "try again next tick", not an error).
+  */
+  static async settleEligibleMatch() {
+    const db = require('../config/database');
+    const connection = await db.promise().getConnection();
+    const LOCK_NAME = 'coinflip_settlement';
+    const LOCK_TIMEOUT_SECONDS = 10;
+    let lockAcquired = false;
+
+    try {
+      const [[lockRow]] = await connection.query(
+        'SELECT GET_LOCK(?, ?) AS acquired',
+        [LOCK_NAME, LOCK_TIMEOUT_SECONDS]
+      );
+      lockAcquired = lockRow.acquired === 1;
+
+      if (!lockAcquired) {
+        console.warn(`[coin-flip] Could not acquire '${LOCK_NAME}' lock within ${LOCK_TIMEOUT_SECONDS}s -- another settlement is likely still running. Skipping this attempt.`);
+        return null;
+      }
+
+      await connection.beginTransaction();
+
+      const match = await coinFlipModel.getEligibleMatch();
+      if (!match) {
+        await connection.rollback();
+        return null;
+      }
+
+      let result = match.result;
+      // { userId, mode, newCount } when a forced loss was applied this
+      // round -- used after payout to decide whether to auto-deactivate.
+      let forcedLossInfo = null;
+
+      if (result === 'Automatic') {
+        const highestBidder = await coinFlipModel.getHighestBidder(match.id, connection);
+
+        // highestBidder.mode is only non-null when the LEFT JOIN matched
+        // an ACTIVE row in tbl_coin_selected_users for this user -- i.e.
+        // exactly the same fact the old code re-confirmed with a second
+        // getSelectedUser() call. One query, one snapshot, taken while
+        // holding the settlement lock -- no separate read that could
+        // observe a different state.
+        if (highestBidder && highestBidder.mode) {
+          result = highestBidder.prediction === 'Head' ? 'Tail' : 'Head';
+
+          const newCount = await coinFlipModel.incrementForcedLoss(highestBidder.user_id, connection);
+          forcedLossInfo = {
+            userId: highestBidder.user_id,
+            mode: highestBidder.mode,
+            newCount,
+          };
+        } else {
+          result = Math.random() < 0.5 ? 'Head' : 'Tail';
+        }
+      }
+
+      await coinFlipModel.updateMatchResult(match.id, result, connection);
+      await this.giveWinnings(match, result, connection);
+
+      if (forcedLossInfo) {
+        await this._applyForcedLossStopCondition(forcedLossInfo, connection);
+      }
+
+      await connection.commit();
+      return { match, result };
+    } catch (error) {
+      try { await connection.rollback(); } catch { /* connection may already be broken */ }
+      const message = 'Service: settleEligibleMatch - ' + error.message;
+      console.error(message);
+      logger.error(message, { stack: error.stack });
+      throw new Error('Error in settleEligibleMatch: ' + error.message);
+    } finally {
+      if (lockAcquired) {
+        await connection.query('SELECT RELEASE_LOCK(?)', [LOCK_NAME]).catch(() => {});
+      }
+      connection.release();
+    }
+  }
+
+  /*
+  | _applyForcedLossStopCondition({ userId, mode, newCount }, connection)
+  |
+  | lose_8_games:    unchanged from the original behavior -- deactivate
+  |                   once newCount reaches 8.
+  | lose_until_zero: deactivate once the user's current wallet+bonus
+  |                   balance is 0 or below the current minimum bet.
+  |                   Bet placement already debits the stake at the time
+  |                   the bet is placed (see CoinFlipController.saveCoinBet
+  |                   step 9) and a forced LOSS credits nothing back --
+  |                   so calculateWalletAmount/calculateBonus, read here
+  |                   right after the loss, already reflect the post-loss
+  |                   balance with no extra arithmetic needed.
+  */
+  static async _applyForcedLossStopCondition({ userId, mode, newCount }, connection) {
+    if (mode === 'lose_8_games') {
+      if (newCount !== null && newCount >= 8) {
+        await coinFlipModel.softRemoveSelectedUser(userId, connection);
+      }
+      return;
+    }
+
+    // lose_until_zero
+    const [wallet, bonus, minBet] = await Promise.all([
+      this.calculateWalletAmount(userId, connection),
+      this.calculateBonus(userId, connection),
+      coinFlipModel.fetchMinBetAmount(connection),
+    ]);
+
+    const balance = parseFloat(wallet) + parseFloat(bonus);
+    const minimumBet = parseFloat(minBet) || 0;
+
+    if (balance <= 0 || balance < minimumBet) {
+      await coinFlipModel.softRemoveSelectedUser(userId, connection);
+    }
+  }
+
+  static async giveWinnings(match, result, connection) {
     try {
       const { id: matchId, win_ratio } = match;
 
-      const winUsers = await coinFlipModel.getWinningUsers(matchId, result);
+      const winUsers = await coinFlipModel.getWinningUsers(matchId, result, connection);
 
       if (winUsers && winUsers.length > 0) {
         for (const bet of winUsers) {
@@ -435,7 +594,7 @@ class CoinFlipService {
           const winAmount = (win_ratio / 100) * amount;
           const totalUserAmount = amount + winAmount;
 
-          const currentWallet = parseFloat(await this.calculateWalletAmount(userId));
+          const currentWallet = parseFloat(await this.calculateWalletAmount(userId, connection));
           const newWallet = currentWallet + totalUserAmount;
 
           const winnerData = {
@@ -443,7 +602,7 @@ class CoinFlipService {
             match_id: matchId,
             userBy: userId,
           };
-          const winId = await coinFlipModel.insertCoinWinner(winnerData);
+          const winId = await coinFlipModel.insertCoinWinner(winnerData, connection);
 
           const txnData = {
             bet_id: bet.bet_id,
@@ -456,8 +615,8 @@ class CoinFlipService {
             type: 'Credit',
             t_status: 'Win',
           };
-          await coinFlipModel.insertTransaction(txnData);
-          await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount);
+          await coinFlipModel.insertTransaction(txnData, connection);
+          await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount, connection);
         }
       } else {
         console.log(`No winners for match ${matchId} with result ${result}.`);
