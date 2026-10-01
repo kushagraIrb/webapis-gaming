@@ -41,7 +41,7 @@ class DepositService {
             // Validate required fields.
             // deposit_amount   — NOT required: derived from AI, may be null if extraction failed.
             // deposit_date     — NOT required: derived from OCR, may be null if date unreadable.
-            if (!deposit_id || !deposit_amount_step1 || !bank_owner_name) {
+            if (!deposit_id || !deposit_amount_step1) {
                 const err = new Error('Some data is missing.');
                 err.statusCode = 400;
                 throw err;
