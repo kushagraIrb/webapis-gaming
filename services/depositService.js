@@ -98,6 +98,27 @@ class DepositService {
                 throw err;
             }
 
+            // Last deposit added manually by an admin ("W&D with Screenshot"): the
+            // admin records only the LAST 5 digits of the transaction ID, so the
+            // exact match above cannot see it. If this screenshot's transaction
+            // ID ends with those 5 digits it is the same screenshot again.
+            const lastDeposit = await depositModel.getLastDeposit(userId);
+            const adminEnteredId = lastDeposit ? String(lastDeposit.deposit_id ?? '').trim() : '';
+            if (
+                lastDeposit &&
+                lastDeposit.added_by_admin &&
+                /^\d{5}$/.test(adminEnteredId) &&
+                String(deposit_id).trim().endsWith(adminEnteredId)
+            ) {
+                console.warn(
+                    `saveDeposit: matches last manual deposit — user=${userId} deposit_id=${deposit_id} ` +
+                    `admin_entered_id=${adminEnteredId} last_deposit_list_id=${lastDeposit.id}`
+                );
+                const err = new Error('This screenshot has already been approved. Please try again with a different screenshot.');
+                err.statusCode = 409;
+                throw err;
+            }
+
             // Check same screenshot timestamp/deposit date
             const depositsWithSameDate = await depositModel.getDepositsByDate(deposit_date);
             
