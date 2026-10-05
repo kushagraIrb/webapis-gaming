@@ -194,6 +194,35 @@ class DepositService {
             }
 
             // ─────────────────────────────────────────────────────────────────
+            // STEP 2b — LAST DEPOSIT WAS ADDED MANUALLY BY AN ADMIN
+            //
+            // When an admin credits a user from a screenshot ("W&D with
+            // Screenshot") they record a 5-digit Transaction ID, not the
+            // screenshot's full one, so the exact match above cannot see it.
+            // The admin always enters the LAST 5 digits. If the user's last
+            // deposit is such a manual one and this screenshot's transaction
+            // ID ends with those 5 digits, it is the same screenshot being
+            // submitted again.
+            // ─────────────────────────────────────────────────────────────────
+            const lastDeposit = await depositModel.getLastDeposit(userId);
+            const adminEnteredId = lastDeposit ? String(lastDeposit.deposit_id ?? '').trim() : '';
+            if (
+                lastDeposit &&
+                lastDeposit.added_by_admin &&
+                /^\d{5}$/.test(adminEnteredId) &&
+                String(deposit_id).trim().endsWith(adminEnteredId)
+            ) {
+                logger.warn(
+                    `saveDeposit: matches last manual deposit — ` +
+                    `user=${userId} deposit_id=${deposit_id} ` +
+                    `admin_entered_id=${adminEnteredId} last_deposit_list_id=${lastDeposit.id}`,
+                );
+                const err = new Error('This screenshot has already been approved. Please try again with a different screenshot.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            // ─────────────────────────────────────────────────────────────────
             // STEP 3 — OLD STRING SIMILARITY ON SAME DATE  (fallback)
             //
             // Catches near-duplicate deposit IDs (OCR artefacts, typos) when
