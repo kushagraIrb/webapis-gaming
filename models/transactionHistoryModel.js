@@ -46,7 +46,16 @@ class TransactionHistoryModel {
         }
     }
     
+    // A transfer to / from a Match ID is saved with one of two texts: the plain
+    // "TRANSFER FROM APP TO ID" (CI3 admin, Add Deposit / Withdrawal) or, from
+    // the Node admin's transfer approvals, that text followed by the site name,
+    // e.g. "TRANSFER FROM APP TO ID(Site Name)". Both count: a reason matches
+    // when it is exactly the plain text or starts with it.
     static async checkAdminTransferBypass(userId, transId) {
+        const APP_TO_ID = 'TRANSFER FROM APP TO ID';
+        const ID_TO_APP = 'TRANSFER FROM ID TO APP';
+        const matches = (reasons, text) => reasons === text || String(reasons || '').startsWith(text);
+
         const query = `
             SELECT t.t_status, wd.reasons
             FROM tbl_transaction_history t
@@ -54,23 +63,27 @@ class TransactionHistoryModel {
             WHERE t.user_id = ?
             AND t.trans_id > ?
             AND (
-                (t.t_status = 'Withdrawal by Admin' AND wd.reasons = 'TRANSFER FROM APP TO ID')
+                (t.t_status = 'Withdrawal by Admin' AND (wd.reasons = ? OR wd.reasons LIKE ?))
                 OR
-                (t.t_status = 'Deposit by Admin' AND wd.reasons = 'TRANSFER FROM ID TO APP')
+                (t.t_status = 'Deposit by Admin' AND (wd.reasons = ? OR wd.reasons LIKE ?))
             )
         `;
-    
+
         try {
-            const [rows] = await db.promise().query(query, [userId, transId]);
-    
+            const [rows] = await db.promise().query(query, [
+                userId, transId,
+                APP_TO_ID, `${APP_TO_ID}%`,
+                ID_TO_APP, `${ID_TO_APP}%`,
+            ]);
+
             let hasWithdrawal = false;
             let hasDeposit = false;
-    
+
             rows.forEach(row => {
-                if (row.t_status === 'Withdrawal by Admin' && row.reasons === 'TRANSFER FROM APP TO ID') {
+                if (row.t_status === 'Withdrawal by Admin' && matches(row.reasons, APP_TO_ID)) {
                     hasWithdrawal = true;
                 }
-                if (row.t_status === 'Deposit by Admin' && row.reasons === 'TRANSFER FROM ID TO APP') {
+                if (row.t_status === 'Deposit by Admin' && matches(row.reasons, ID_TO_APP)) {
                     hasDeposit = true;
                 }
             });
