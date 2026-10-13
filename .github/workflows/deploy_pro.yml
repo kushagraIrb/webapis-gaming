@@ -5,6 +5,13 @@ on:
     branches:
       - main
 
+# Never run two deploys to the production server at once (two overlapping runs would both run
+# "npm rebuild bcrypt" in the same folder and break each other's compile). A second run waits for
+# the first; cancel-in-progress stays false so a deploy is never cut off halfway through npm install.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-24.04
