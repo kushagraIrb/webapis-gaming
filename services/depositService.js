@@ -3,6 +3,7 @@ const userModel = require('../models/userModel');
 const stringSimilarity = require('string-similarity');
 const { logger } = require('../logger');
 const DepositAiAnalysisService = require('./depositAiAnalysisService');
+const OcrSettingModel = require('../models/ocrSettingModel');
 
 class DepositService {
     // Fetch deposit history or count for a user
@@ -109,6 +110,8 @@ class DepositService {
             // If AI extraction failed or the amount is absent, deposit_amount is NULL —
             // we deliberately do NOT fall back to the user amount.  A null deposit_amount
             // is a clear signal that screenshot extraction did not produce a result.
+            // The one exception is Google OCR, which has no AI amount at all - see
+            // "deposit_amount for Google OCR" below.
             //
             // tbl_transaction_history.credit_amount always uses deposit_amount_step1
             // (user entered) — the AI amount never affects the wallet credit.
@@ -248,11 +251,42 @@ class DepositService {
                 }
             }
 
+            // ── deposit_amount for Google OCR ─────────────────────────────────
+            // Google Vision only reads the transaction ID and date, so it sends no AI analysis
+            // and there is no AI amount. While Google is the selected OCR engine, deposit_amount
+            // is the amount the user entered - exactly deposit_amount_step1 - as it was before
+            // the Python OCR existed.
+            //
+            // Decided on the server (the engine selected in the admin panel) and only when no AI
+            // data came with the request, never from what the browser claims: a Python-mode
+            // deposit that arrives without AI data still gets NULL, and an AI amount that did
+            // come with the request is never overwritten. Read only now, after every rejection
+            // above, so a rejected deposit costs no extra query. If the setting cannot be read the
+            // deposit is still saved with NULL, exactly as before.
+            let depositAmount = aiExtractedAmount;
+            if (depositAmount === null && !rawAiAnalysis) {
+                try {
+                    const selectedEngine = await OcrSettingModel.getEngine();
+                    if (String(selectedEngine || '').trim().toLowerCase() === 'google') {
+                        depositAmount = deposit_amount_step1;
+                        logger.info(
+                            `saveDeposit: Google OCR (no AI amount) — deposit_amount set to the user amount ` +
+                            `user=${userId} deposit_id=${deposit_id} amount=₹${deposit_amount_step1}`,
+                        );
+                    }
+                } catch (error) {
+                    logger.warn(
+                        `saveDeposit: could not read the OCR engine setting, deposit_amount left NULL — ` +
+                        `user=${userId} deposit_id=${deposit_id}: ${error.message}`,
+                    );
+                }
+            }
+
             // Prepare deposit data
             const data = {
                 userId,
                 deposit_id,
-                deposit_amount:       aiExtractedAmount,  // AI extracted (null if extraction failed)
+                deposit_amount:       depositAmount,      // AI extracted; user amount under Google OCR; NULL if neither
                 deposit_amount_step1,                     // user entered (always present)
                 deposit_date,
                 deposit_screenshot,

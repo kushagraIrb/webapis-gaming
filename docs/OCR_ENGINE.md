@@ -119,3 +119,19 @@ AI duplicate detection (transaction ID / UTR / reference cross-check) and the AI
 comparison. The older checks still apply (exact deposit ID match and the manual-deposit
 last-5-digits check). This is how deposits worked before the Python OCR was added. The admin
 panel warns about this before switching to Google.
+
+### `tbl_deposit_list.deposit_amount`
+
+| Selected engine | `deposit_amount` | `deposit_amount_step1` |
+|---|---|---|
+| Python, amount read | the amount read from the screenshot | the amount the user entered |
+| Python, amount not read | `NULL` (a visible "extraction failed" signal) | the amount the user entered |
+| Google | **the amount the user entered, identical to `deposit_amount_step1`** | the amount the user entered |
+
+Google cannot read the amount, so while it is selected the two columns always match, and an admin
+comparing them will never see a mismatch. This is decided on the server from the engine selected
+in the admin panel, never from what the browser sends, and only when the request carries no AI
+data: an AI amount that does arrive is never overwritten, and a Python-mode deposit that arrives
+without AI data still gets `NULL`. The wallet credit always uses the amount the user entered,
+whatever the engine. If the setting cannot be read at that moment the deposit is still saved, with
+`NULL`.
