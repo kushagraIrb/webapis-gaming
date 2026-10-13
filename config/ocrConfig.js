@@ -3,7 +3,7 @@
 //   python  -> Python (FastAPI) OCR service            (default)
 //   google  -> Google Vision OCR service (PHP, image_read/read_text.php)
 //
-// The engine is chosen by a super admin in the admin panel (Admin Area -> OCR Engine) and
+// The engine is chosen in the admin panel (Admin Area -> OCR Engine, needs the OCR Engine right) and
 // stored in tbl_ocr_setting. It is read on every request, so a change applies immediately.
 // There is no engine setting in .env. If nothing is stored (migration not run yet, row
 // missing) the default 'python' is used.

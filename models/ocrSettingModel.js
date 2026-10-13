@@ -4,7 +4,7 @@ const { logger } = require('../logger');
 let warnedMissingTable = false;
 
 class OcrSettingModel {
-    // The OCR engine a super admin chose in the admin panel (Admin Area -> OCR Engine), or null
+    // The OCR engine chosen in the admin panel (Admin Area -> OCR Engine), or null
     // when none is stored - the caller then uses the default engine (python).
     //
     // The table is created and seeded by migrations/20261013-ocr-engine-setting.sql in the admin

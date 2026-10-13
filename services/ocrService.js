@@ -123,7 +123,7 @@ const ENGINES = {
     google: extractWithGoogle,
 };
 
-// The engine a super admin chose in the admin panel, or null when none is stored.
+// The engine chosen in the admin panel, or null when none is stored.
 // Read on every request so a change applies immediately, without restarting the backend.
 // If it cannot be read the request fails: guessing an engine could silently use the wrong one.
 async function readSavedEngine() {
