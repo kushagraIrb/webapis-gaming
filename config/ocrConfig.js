@@ -1,18 +1,23 @@
 // OCR engine selection for deposit screenshots.
 //
-//   OCR_ENGINE=python  -> Python (FastAPI) OCR service            (default)
-//   OCR_ENGINE=google  -> Google Vision OCR service (PHP, image_read/read_text.php)
+//   python  -> Python (FastAPI) OCR service            (default)
+//   google  -> Google Vision OCR service (PHP, image_read/read_text.php)
 //
-// Only the selected engine's settings are read and validated, so a missing or
-// wrong setting for the engine that is NOT selected never affects the one in use.
-// The values come from .env, which is read once when the process starts - see
-// docs/OCR_ENGINE.md for how to switch.
+// The engine is chosen by a super admin in the admin panel (Admin Area -> OCR Engine) and
+// stored in tbl_ocr_setting. It is read on every request, so a change applies immediately.
+// There is no engine setting in .env. If nothing is stored (migration not run yet, row
+// missing) the default 'python' is used.
+//
+// Optional .env settings, for the services themselves (not for choosing the engine):
+//   OCR_PYTHON_URL, OCR_GOOGLE_URL, OCR_TIMEOUT_MS
+// Only the selected engine's settings are read and validated, so a missing or wrong
+// setting for the engine that is NOT selected never affects the one in use.
 
 const { logger } = require('../logger');
 
 const SUPPORTED_ENGINES = ['python', 'google'];
 
-// The engine that was active before this setting existed. Used when OCR_ENGINE is missing/empty.
+// The engine that was active before the admin panel switch existed.
 const DEFAULT_ENGINE = 'python';
 
 // Service URL per engine. The defaults are the services the site already uses,
@@ -44,18 +49,18 @@ class OcrConfigError extends Error {
 
 const clean = (value) => (typeof value === 'string' ? value.trim() : '');
 
-function resolveEngine(env) {
-    const raw = clean(env.OCR_ENGINE);
-    if (!raw) return DEFAULT_ENGINE;
+// Returns { engine, source } where source is 'admin panel' or 'default'.
+function resolveEngine(savedEngine) {
+    const saved = clean(savedEngine);
+    if (!saved) return { engine: DEFAULT_ENGINE, source: 'default' };
 
-    const engine = raw.toLowerCase();
+    const engine = saved.toLowerCase();
     if (!SUPPORTED_ENGINES.includes(engine)) {
         throw new OcrConfigError(
-            `Unsupported OCR_ENGINE "${raw.slice(0, 40)}". Supported values: ${SUPPORTED_ENGINES.join(', ')}. ` +
-            `Leave it unset to use the default (${DEFAULT_ENGINE}).`,
+            `Unsupported OCR engine "${saved.slice(0, 40)}" saved by the admin panel. Supported values: ${SUPPORTED_ENGINES.join(', ')}.`,
         );
     }
-    return engine;
+    return { engine, source: 'admin panel' };
 }
 
 function resolveUrl(env, service) {
@@ -83,34 +88,52 @@ function resolveTimeout(env) {
     return timeoutMs;
 }
 
-// Returns { engine, label, url, timeoutMs } for the selected engine, or throws OcrConfigError.
-function resolveOcrConfig(env = process.env) {
-    const engine = resolveEngine(env);
+// Returns { engine, source, label, url, timeoutMs } for the selected engine, or throws OcrConfigError.
+//   savedEngine - the engine stored by the admin panel (null when nothing is stored)
+function resolveOcrConfig(env = process.env, savedEngine = null) {
+    const { engine, source } = resolveEngine(savedEngine);
     const service = ENGINE_SERVICES[engine];
     return {
         engine,
+        source,
         label: service.label,
         url: resolveUrl(env, service),
         timeoutMs: resolveTimeout(env),
     };
 }
 
-// Logs the selected engine once at startup. An invalid value is reported loudly here and
-// makes OCR requests fail with a clear error - it deliberately does not stop the whole
-// API (login, bets, withdrawals...) from starting.
+// Logs the OCR service settings once at startup. The selected engine is not known here (it is
+// read from the database on every request), so each engine's settings are checked and a problem
+// is reported as a warning - it only matters if that engine gets selected, and it deliberately
+// never stops the API (login, bets, withdrawals...) from starting.
 function reportOcrConfig(env = process.env) {
-    try {
-        const config = resolveOcrConfig(env);
-        const message = `OCR engine: ${config.engine} (${config.label}, ${new URL(config.url).origin}, timeout ${config.timeoutMs}ms)`;
+    const ok = [];
+    const problems = [];
+    SUPPORTED_ENGINES.forEach((engine) => {
+        try {
+            const config = resolveOcrConfig(env, engine);
+            ok.push(`${engine}: ${new URL(config.url).origin} (timeout ${config.timeoutMs}ms)`);
+        } catch (error) {
+            problems.push(`${engine}: ${error.message}`);
+        }
+    });
+
+    if (ok.length) {
+        const message = `OCR services - ${ok.join('; ')}. The engine is chosen in the admin panel (OCR Engine page), default ${DEFAULT_ENGINE}.`;
         console.log(message);
         logger.info(message);
-        return config;
-    } catch (error) {
-        const message = `OCR configuration error: ${error.message} Deposit screenshot reading will fail until this is fixed.`;
+    }
+    if (problems.length) {
+        const message = `OCR configuration warning - ${problems.join('; ')}. Screenshot reading fails while an affected engine is selected.`;
         console.error(message);
         logger.error(message);
-        return null;
     }
+    if (clean(env.OCR_ENGINE)) {
+        const message = 'OCR_ENGINE in .env is no longer used and can be removed. Choose the engine in the admin panel (OCR Engine page).';
+        console.warn(message);
+        logger.warn(message);
+    }
+    return { ok, problems };
 }
 
 module.exports = {

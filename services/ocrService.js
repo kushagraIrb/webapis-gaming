@@ -1,10 +1,11 @@
 const axios = require('axios');
 const { logger } = require('../logger');
 const { resolveOcrConfig } = require('../config/ocrConfig');
+const OcrSettingModel = require('../models/ocrSettingModel');
 
 // A failure of the selected OCR engine. There is no automatic fallback to the other
 // engine: the caller gets a clear error and the admin decides which engine to use
-// (OCR_ENGINE in .env).
+// (Admin Area -> OCR Engine in the admin panel).
 //   statusCode - HTTP status the API should answer with
 //   code       - stable machine-readable reason
 class OcrEngineError extends Error {
@@ -122,24 +123,40 @@ const ENGINES = {
     google: extractWithGoogle,
 };
 
-// The single entry point for reading a deposit screenshot. Picks the engine from
-// OCR_ENGINE and calls only that one.
+// The engine a super admin chose in the admin panel, or null when none is stored.
+// Read on every request so a change applies immediately, without restarting the backend.
+// If it cannot be read the request fails: guessing an engine could silently use the wrong one.
+async function readSavedEngine() {
+    try {
+        return await OcrSettingModel.getEngine();
+    } catch (error) {
+        logger.error(`OCR engine setting could not be read from the database: ${error.message}`);
+        throw new OcrEngineError('The OCR engine setting could not be read', {
+            engine: null,
+            statusCode: 503,
+            code: 'OCR_SETTING_UNREADABLE',
+        });
+    }
+}
+
+// The single entry point for reading a deposit screenshot. Picks the engine chosen in the
+// admin panel (python if none is stored) and calls only that one.
 //   image  - multer memory file ({ buffer, mimetype, originalname })
 //   fields - extra form fields to pass on (the services have always received deposit_amount_step1)
 // Throws OcrConfigError (bad OCR_* setting) or OcrEngineError (selected engine failed).
 async function extractFromScreenshot(image, fields = {}) {
-    const config = resolveOcrConfig();
+    const config = resolveOcrConfig(process.env, await readSavedEngine());
     const startedAt = Date.now();
 
     try {
         const result = await ENGINES[config.engine](config, image, fields);
         logger.info(
-            `OCR[${config.engine}] ok in ${Date.now() - startedAt}ms ` +
+            `OCR[${config.engine}, set by ${config.source}] ok in ${Date.now() - startedAt}ms ` +
             `(transactionID ${result.transactionID ? 'found' : 'missing'}, transactionDate ${result.transactionDate ? 'found' : 'missing'})`,
         );
         return { engine: config.engine, ...result };
     } catch (error) {
-        logger.error(`OCR[${config.engine}] failed after ${Date.now() - startedAt}ms: ${error.message}`);
+        logger.error(`OCR[${config.engine}, set by ${config.source}] failed after ${Date.now() - startedAt}ms: ${error.message}`);
         throw error;
     }
 }

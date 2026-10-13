@@ -8,12 +8,13 @@ const FAILURES = {
     OCR_CONFIG_INVALID: 'Screenshot reading is not set up correctly right now. Please contact support.',
     OCR_RUNTIME_UNSUPPORTED: 'Screenshot reading is not available right now. Please contact support.',
     OCR_ENGINE_UNAVAILABLE: 'Screenshot reading is temporarily unavailable. Please try again in a few minutes.',
+    OCR_SETTING_UNREADABLE: 'Screenshot reading is temporarily unavailable. Please try again in a few minutes.',
     OCR_ENGINE_TIMEOUT: 'Reading the screenshot took too long. Please try again.',
     OCR_ENGINE_BAD_RESPONSE: 'We could not read this screenshot. Please try again.',
 };
 
 class OcrController {
-    // Read a deposit screenshot with the OCR engine selected by OCR_ENGINE.
+    // Read a deposit screenshot with the OCR engine chosen in the admin panel.
     // Responds with the same data the website has always used after reading a screenshot:
     // { extractedText, formatDate, transactionID, transactionDate, aiAnalysis } (+ engine).
     async extractImage(req, res) {
