@@ -202,11 +202,15 @@ class DepositService {
             // ID ends with those 5 digits it is the same screenshot again.
             const lastDeposit = await depositModel.getLastDeposit(userId);
             const adminEnteredId = lastDeposit ? String(lastDeposit.deposit_id ?? '').trim() : '';
+            // The five digits the admin typed. An admin deposit that repeated an earlier
+            // Transaction ID is saved as "<5 digits>-<n>" (for example 08396-2); the
+            // digits are still those five.
+            const adminLastFive = (/^(\d{5})(?:-\d+)?$/.exec(adminEnteredId) || [])[1];
             if (
                 lastDeposit &&
                 lastDeposit.added_by_admin &&
-                /^\d{5}$/.test(adminEnteredId) &&
-                String(deposit_id).trim().endsWith(adminEnteredId)
+                adminLastFive &&
+                String(deposit_id).trim().endsWith(adminLastFive)
             ) {
                 console.warn(
                     `saveDeposit: matches last manual deposit — user=${userId} deposit_id=${deposit_id} ` +
