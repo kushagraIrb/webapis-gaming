@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const moment = require('moment-timezone');
 
 /**
  * Data-access layer for tbl_deposit_ai_analysis.
@@ -27,6 +28,11 @@ class DepositAiAnalysisModel {
      * @returns {Promise<object>}  mysql2 result object (includes insertId)
      */
     static async saveAiAnalysis(data) {
+        // created_at is set here in IST, like every other timestamp written by this
+        // codebase, instead of being left to the column default, which is the
+        // database server's own clock.
+        const istTime = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+
         const query = `
             INSERT INTO tbl_deposit_ai_analysis (
                 deposit_list_id,
@@ -53,8 +59,9 @@ class DepositAiAnalysisModel {
                 nearest_similarity,
                 vector_template_hint,
                 ocr_text,
-                full_response
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                full_response,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -86,6 +93,7 @@ class DepositAiAnalysisModel {
             data.vector_template_hint ?? null,
             data.ocr_text             ?? null,
             data.full_response !== undefined ? JSON.stringify(data.full_response)    : null,
+            istTime,
         ];
 
         const [result] = await db.promise().query(query, values);
@@ -312,6 +320,9 @@ class DepositAiAnalysisModel {
      * @param {number} days  Lookback window in days (default 30)
      */
     static async getDailyAiStats(days = 30) {
+        // created_at holds IST, so "today" is the IST date, not the database server's CURDATE().
+        const istToday = moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
+
         const query = `
             SELECT   DATE(created_at)                AS date,
                      COUNT(*)                         AS total_extractions,
@@ -319,11 +330,11 @@ class DepositAiAnalysisModel {
                      SUM(CASE WHEN fraud_score >= 50 THEN 1 ELSE 0 END) AS fraud_flagged,
                      SUM(review_required)              AS review_required_count
             FROM     tbl_deposit_ai_analysis
-            WHERE    created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+            WHERE    created_at >= DATE_SUB(?, INTERVAL ? DAY)
             GROUP BY DATE(created_at)
             ORDER BY date DESC
         `;
-        const [rows] = await db.promise().query(query, [days]);
+        const [rows] = await db.promise().query(query, [istToday, days]);
         return rows;
     }
 }
