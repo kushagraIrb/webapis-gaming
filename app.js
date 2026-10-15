@@ -43,6 +43,9 @@ if (cluster.isMaster) {
     // Cleanup delivered/expired toast events (3 AM IST daily)
     require('./helpers/cleanToastEvents.js');
 
+    // Report the OCR service settings (and any invalid OCR_* value) once at startup; the engine itself is chosen in the admin panel
+    require('./config/ocrConfig').reportOcrConfig();
+
     // Run log cleanup every 24 hours
     setInterval(() => {
         deleteOldLogs('errors');
