@@ -84,6 +84,10 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
 // result.transaction_date is the date only ("2026-06-04"); result.transactionDate is the full
 // date and time ("2026-06-04 11:47 AM"). The full one must be used, so that deposit_date saved in
 // tbl_deposit_list contains the time as well, not just the date.
+// The UTR is the payment identity: transactionID is result.utr only. The Python service already
+// reports a "UPI transaction ID" as the utr and leaves transaction_id empty, so a screenshot with
+// no UTR gets transactionID null and is rejected by the website. This applies to the Python
+// engine only; the Google mapping below is unchanged.
 async function extractWithPython(config, image, fields) {
     const body = await postImage(config, image, fields);
     if (!isObject(body) || (!('ocr_text' in body) && !isObject(body.result))) {
@@ -94,7 +98,7 @@ async function extractWithPython(config, image, fields) {
     return {
         extractedText: body.ocr_text ?? '',
         formatDate: Boolean(result.formatDate),
-        transactionID: result.transaction_id ?? null,
+        transactionID: result.utr ?? null,
         transactionDate: result.transactionDate ?? null,
         aiAnalysis: body,
     };
