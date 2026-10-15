@@ -120,6 +120,16 @@ comparison. The older checks still apply (exact deposit ID match and the manual-
 last-5-digits check). This is how deposits worked before the Python OCR was added. The admin
 panel warns about this before switching to Google.
 
+### The deposit ID (`transactionID`)
+
+| Selected engine | `transactionID` (saved as `tbl_deposit_list.deposit_id`) |
+|---|---|
+| Python | the **UTR** (`result.utr`) only. The Python service reports a "UPI transaction ID" as the UTR and leaves `transaction_id` empty. A screenshot with no UTR gets `null` and the website asks for a proper screenshot, even if a `transaction_id` was found. |
+| Google | what Google Vision read, unchanged. Google has no separate UTR. |
+
+This is the only place the two engines differ in how the ID is chosen. Switching engines needs no
+other change.
+
 ### `tbl_deposit_list.deposit_amount`
 
 | Selected engine | `deposit_amount` | `deposit_amount_step1` |
