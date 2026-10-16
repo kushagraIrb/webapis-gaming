@@ -141,7 +141,7 @@ class WithdrawalModel {
 
     // Get withdrawal by ID
     static async getWithdrawalById(withdrawalId) {
-        const query = `SELECT in_process FROM tbl_withdrawal WHERE id = ?`;
+        const query = `SELECT in_process, is_bet_allowed FROM tbl_withdrawal WHERE id = ?`;
         try {
             const [rows] = await db.promise().query(query, [withdrawalId]);
             return rows[0] || null;
@@ -151,13 +151,19 @@ class WithdrawalModel {
         }
     }
 
-    // Update withdrawal status
+    // Update withdrawal status (used when the user cancels a request).
+    // `modified` records when it was cancelled (the Cancelled Withdrawal Report shows that date).
+    // `is_bet_allowed = 0`: once an admin has pressed Allowed in the Transfer dialog (is_bet_allowed = 1)
+    // the request can no longer be cancelled; checked here too so a cancel that races with the admin's
+    // click cannot slip through between the service's check and this update.
     static async updateWithdrawalStatus(withdrawalId, userId, updateData) {
-        const query = `UPDATE tbl_withdrawal SET status = ?, cancelBy = ? WHERE id = ? AND user_id = ?`;
+        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+        const query = `UPDATE tbl_withdrawal SET status = ?, cancelBy = ?, modified = ? WHERE id = ? AND user_id = ? AND is_bet_allowed = 0`;
         try {
             const [result] = await db.promise().query(query, [
                 updateData.status,
                 updateData.cancelBy,
+                istTime,
                 withdrawalId,
                 userId
             ]);

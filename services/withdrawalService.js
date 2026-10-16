@@ -4,6 +4,9 @@ const userModel = require("../models/userModel");
 const liveBetModel = require('../models/liveBetModel');
 const sendMail = require('../helpers/sendMail');
 
+// Shown when the user tries to cancel a request the admin has already allowed (is_bet_allowed = 1).
+const PROCESSING_MESSAGE = 'Your withdrawal request is being processed by our team and can no longer be cancelled.';
+
 class WithdrawalService {
     // Get last withdrawal Date for a user
     static async getLastWithdrawalDateById(userId) {
@@ -146,6 +149,12 @@ class WithdrawalService {
                 return { error: true, message: 'Your withdrawal is in process. Please try again after 1 minute.' };
             }
 
+            // The admin pressed Allowed in the Withdrawal Request > Transfer dialog (is_bet_allowed = 1):
+            // the request is being processed and the user can no longer cancel it.
+            if (Number(withdrawal.is_bet_allowed) === 1) {
+                return { error: true, message: PROCESSING_MESSAGE };
+            }
+
             // Proceed to cancel the withdrawal
             const updated = await withdrawalModel.updateWithdrawalStatus(withdrawalId, userId, {
                 status: '2',
@@ -153,6 +162,11 @@ class WithdrawalService {
             });
 
             if (!updated) {
+                // Nothing changed: either the admin pressed Allowed just now, or the request is not this user's.
+                const latest = await withdrawalModel.getWithdrawalById(withdrawalId);
+                if (latest && Number(latest.is_bet_allowed) === 1) {
+                    return { error: true, message: PROCESSING_MESSAGE };
+                }
                 throw new Error('Failed to cancel the withdrawal request.');
             }
 
