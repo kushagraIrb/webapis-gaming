@@ -4,6 +4,7 @@ const stringSimilarity = require('string-similarity');
 const { logger } = require('../logger');
 const DepositAiAnalysisService = require('./depositAiAnalysisService');
 const OcrSettingModel = require('../models/ocrSettingModel');
+const BankAssignmentService = require('./bankAssignmentService');
 
 class DepositService {
     // Fetch deposit history or count for a user
@@ -27,6 +28,20 @@ class DepositService {
         } catch (error) {
             console.error('Error in depositModel:', error.message);
             throw new Error('Failed to fetch deposit history');
+        }
+    }
+
+    // The bank account for a user and amount: the assigned account while Bank Assignment is set up, the old rotation
+    // until then. `assignment` is null on the old rotation. `data` keeps the old shape (the bank row).
+    static async getBankAccountForUser(userId, depositAmount) {
+        try {
+            const assigned = await BankAssignmentService.assign(userId, depositAmount);
+            if (assigned.configured) return { data: assigned.bank, assignment: assigned };
+            return { data: await BankAssignmentService.legacyAccount(depositAmount), assignment: null };
+        } catch (error) {
+            if (error.statusCode) throw error;
+            console.error('Error in depositService:', error.message);
+            throw new Error('Failed to fetch bank account');
         }
     }
 
@@ -273,6 +288,15 @@ class DepositService {
                 }
             }
 
+            // Bank Assignment: the account this deposit belongs to. The holder name comes from the account on the
+            // server, not from the browser. Never blocks a deposit: on any problem it is saved the old way.
+            let bankCtx = null;
+            try {
+                bankCtx = await BankAssignmentService.resolveForSave(userId, depositData.assignment_id);
+            } catch (error) {
+                logger.error(`saveDeposit: bank assignment lookup failed user=${userId}: ${error.message}`, { stack: error.stack });
+            }
+
             // Prepare deposit data
             const data = {
                 userId,
@@ -281,7 +305,7 @@ class DepositService {
                 deposit_amount_step1,                     // user entered (always present)
                 deposit_date,
                 deposit_screenshot,
-                bank_owner_name
+                bank_owner_name: bankCtx && bankCtx.bank.name ? bankCtx.bank.name : bank_owner_name
             };
 
             // Save deposit
@@ -289,6 +313,11 @@ class DepositService {
 
             if (result) {
                 const depositListId = result.insertId;
+
+                // Link the deposit to its bank account and count it in the account's day total
+                await BankAssignmentService.recordDeposit(bankCtx, {
+                    userId, depositListId, amount: parseFloat(deposit_amount_step1),
+                });
 
                 // ── AI Analysis persistence ───────────────────────────────────
                 // Fire-and-forget: runs in the background after the deposit row

@@ -44,17 +44,21 @@ class DepositController {
                 });
             }
 
-            const result = await depositService.getBankAccountByValue(depositAmount);
+            // `data` keeps the old shape (the bank row) so older app builds keep working; `assignment` is the new info
+            const { data, assignment } = await depositService.getBankAccountForUser(req.user_id, depositAmount);
 
             return res.status(200).send({
                 status: true,
-                data: result,
+                data,
+                assignment,
                 message: 'Bank account fetched successfully',
             });
         } catch (error) {
-            console.error('Error fetching deposit history:', error.message);
-            logger.error(`Error fetching deposit history: ${error.message}`, { stack: error.stack });
-            
+            logger.error(`Error fetching bank account: ${error.message}`, { stack: error.stack });
+            if (error.statusCode) {
+                return res.status(error.statusCode).send({ status: false, code: error.code, message: error.message });
+            }
+
             return res.status(500).send({
                 status: false,
                 message: 'An error occurred while fetching account history',
