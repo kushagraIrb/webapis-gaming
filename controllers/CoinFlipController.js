@@ -241,8 +241,6 @@ class CoinFlipController {
         
         // console.log("🚀 API HIT (IST):", moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"));
 
-        let shouldCreateNextMatch = false;
-
         try {
             const token = req.query.token || req.headers['x-auth-token'];
 
@@ -250,55 +248,17 @@ class CoinFlipController {
                 return res.status(403).json({ message: 'Unauthorized request' });
             }
 
-            // Step 1: Get current match
-            const currentMatch = await coinFlipService.currentCoinFlipMatch();
-            // console.log("🎯 Current Match FULL:", currentMatch);
-
-            if (!currentMatch) {
-                return res.status(200).json({ message: "No active match found" });
-            }
-
-            const now = moment.tz("Asia/Kolkata");
-
-            // ✅ Combine match_date + match_time
-            const matchDateTime = moment.tz(
-                `${moment(currentMatch.match_date).format("YYYY-MM-DD")} ${currentMatch.match_time}`,
-                "YYYY-MM-DD HH:mm:ss",
-                "Asia/Kolkata"
-            );
-
-            // console.log("🕒 Match End:", matchDateTime.format("YYYY-MM-DD HH:mm:ss"));
-            // console.log("🕒 Current Time:", now.format("YYYY-MM-DD HH:mm:ss"));
-
-            if (!matchDateTime.isValid()) {
-                return res.status(500).json({ message: "Invalid match time" });
-            }
-
-            // ❌ If match still running → STOP
-            const bufferSeconds = 5;
-
-            if (now.isBefore(matchDateTime.clone().subtract(bufferSeconds, 'seconds'))) {
-                console.log("⏳ Match still running → skip");
-
-                return res.status(200).json({
-                    message: "Match not finished yet"
-                });
-            }
-
-            // ✅ Match finished → proceed
-            // console.log("✅ Match finished → processing");
-
-            shouldCreateNextMatch = true;
-
-            // Step 2: Decide the result AND pay winners atomically -- one
-            // DB transaction with the match row locked for its duration,
-            // so a second concurrent hit to this endpoint for the same
-            // match (overlapping cron tick, retried call) can't decide
-            // twice or double-pay. See CoinFlipService.settleEligibleMatch.
-            const matchResult = await coinFlipService.settleEligibleMatch();
+            // Settle the finished match and pay its winners, then create the next match --
+            // all in one call, under one lock (see CoinFlipService.settleEligibleMatch).
+            // Nothing is checked here first: whether a match is due, and whether the next
+            // one may be created, is decided by the clock inside the service, so this call
+            // can never return early and leave the game without a new match (no current
+            // match, a bad match time), and a match that fails to settle does not stop the
+            // next one from being created.
+            const matchResult = await coinFlipService.settleEligibleMatch({ thenCreateNext: true });
 
             if (!matchResult) {
-                console.log("⚠️ No eligible match found (or already settled by another request)");
+                console.log("⚠️ No match was due (or another request is already settling)");
             }
 
             return res.status(200).send('Match processed');
@@ -307,17 +267,6 @@ class CoinFlipController {
             console.error('Error in createWinner:', error.message);
 
             return res.status(500).send({ msg: 'Error occurred', error: error.message });
-
-        } finally {
-            // ✅ Only after match finished
-            if (shouldCreateNextMatch) {
-                try {
-                    // console.log("🔁 Creating next match...");
-                    await coinFlipService.createGame();
-                } catch (err) {
-                    console.error("❌ createGame failed:", err.message);
-                }
-            }
         }
     }
 
