@@ -216,7 +216,7 @@ class CoinFlipModel {
 
     static async getMatchTime(userId, matchId) {
         try {
-            const query = `SELECT match_date, match_time FROM tbl_upcoming_match_coinflip WHERE id = ?`;
+            const query = `SELECT match_date, match_time, status, final_result FROM tbl_upcoming_match_coinflip WHERE id = ?`;
             const [result] = await db.promise().query(query, [matchId]);
             return result || null;
         } catch (error) {
@@ -234,6 +234,8 @@ class CoinFlipModel {
             SELECT ?, ?, ?, ?, ?, ?, ?
             FROM tbl_upcoming_match_coinflip
             WHERE id = ?
+            AND status = 1
+            AND (final_result IS NULL OR TRIM(final_result) = '')
             AND TIMESTAMPDIFF(SECOND, ?, CONCAT(match_date, ' ', match_time)) >= 3
         `;
 
@@ -293,6 +295,8 @@ class CoinFlipModel {
                 SELECT ?, ?, ?, ?, ?, ?, ?
                 FROM tbl_upcoming_match_coinflip
                 WHERE id = ?
+                AND status = 1
+                AND (final_result IS NULL OR TRIM(final_result) = '')
                 AND TIMESTAMPDIFF(SECOND, ?, CONCAT(match_date, ' ', match_time)) >= 3
             `;
 
