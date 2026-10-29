@@ -7,6 +7,8 @@ const { notifyAdmin } = require('../helpers/notifyAdmin');
 const featureModel = require('../models/featureModel');
 
 // The feature key in Admin Area > Feature Launch
+// REMOVE after retire: feature bank_assignment. Once it is live for everyone and retired, delete this constant, the
+// featureModel import and the isLiveForUser check in assign(), plus the old rotation it falls back to.
 const FEATURE_KEY = 'bank_assignment';
 
 // Which admin bank account a user is shown on the deposit page (range -> accounts, plus universal accounts),
@@ -188,6 +190,7 @@ class BankAssignmentService {
     // user in Admin Area > Feature Launch (the caller then uses the old rotation).
     static async assign(userId, rawAmount) {
         const amount = parseAmount(rawAmount);
+        // REMOVE after retire: feature bank_assignment (this check, and the old rotation it falls back to)
         if (!(await featureModel.isLiveForUser(FEATURE_KEY, userId))) return { configured: false };
         if (!(await model.isConfigured())) return { configured: false };
 

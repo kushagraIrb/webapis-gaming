@@ -9,6 +9,10 @@ const { logger } = require('../logger');
 // reading this (tables not created yet, database error) means "off": the user simply gets the site as it was
 // before the feature existed.
 
+// Convention for every feature that uses this: put the check in ONE place and mark it
+//     // REMOVE after retire: feature <key>
+// so that once the feature is for everyone and retired, a search for the key finds everything to delete.
+
 let lastErrorLoggedAt = 0;
 function logReadFailure(error) {
     // not on every request: a missing table would otherwise fill the log
