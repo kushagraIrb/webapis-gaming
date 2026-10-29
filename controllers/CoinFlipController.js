@@ -6,6 +6,21 @@ const moment = require('moment-timezone');
 require('dotenv').config();
 
 class CoinFlipController {
+    async eligibility(req, res) {
+        try {
+            const user_id = req.user_id;
+            if (!user_id) {
+                return res.status(401).json({ msg: 'Invalid user.' });
+            }
+
+            return res.status(200).json(await coinFlipService.getEligibility(user_id));
+        } catch (error) {
+            console.error('Error checking Coin Flip eligibility:', error.message);
+            logger.error(`Error checking Coin Flip eligibility: ${error.message}`, { stack: error.stack });
+            return res.status(500).json({ message: 'Unable to check Coin Flip eligibility.' });
+        }
+    }
+
     async currentMatchDetails(req, res) {liveBetService
         try {
             // Step 1: Fetch Current Coin Flip Match
@@ -80,6 +95,15 @@ class CoinFlipController {
             const user_id = req.user_id;
             if (!user_id) {
                 return res.status(401).json({ msg: 'Invalid user.' });
+            }
+
+            // This is enforced on the server so a direct API call cannot bypass the disabled UI.
+            const eligibility = await coinFlipService.getEligibility(user_id);
+            if (!eligibility.eligible) {
+                return res.status(403).json({
+                    message: 'Coin Flip is available after your account is 7 days old and you have made valid approved deposits totalling Rs. 5,000.',
+                    eligibility,
+                });
             }
     
             const { match_id, prediction, minimum_betamount, bet_amount } = req.body;

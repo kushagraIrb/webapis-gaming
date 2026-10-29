@@ -5,6 +5,30 @@ const moment = require('moment');
 const { logQuery } = require('../helpers/dbLogger');
 
 class CoinFlipModel {
+    static async getUserEligibilityData(userId) {
+        const query = `
+            SELECT
+                DATE_FORMAT(r.created, '%Y-%m-%d %H:%i:%s') AS registered_at,
+                COALESCE(SUM(
+                    CASE
+                        WHEN d.status = 1
+                         AND (d.verified = 1 OR d.verified IS NULL)
+                         AND (d.fake_deposit = 0 OR d.fake_deposit IS NULL)
+                        THEN d.deposit_amount_step1
+                        ELSE 0
+                    END
+                ), 0) AS approved_deposit_total
+            FROM tbl_registration r
+            LEFT JOIN tbl_deposit_list d ON d.user_id = r.id
+            WHERE r.id = ?
+            GROUP BY r.id, r.created
+            LIMIT 1
+        `;
+
+        const [rows] = await db.promise().query(query, [userId]);
+        return rows[0] || null;
+    }
+
     static async fetchCurrentMatch() {
         const query = `
             SELECT *
