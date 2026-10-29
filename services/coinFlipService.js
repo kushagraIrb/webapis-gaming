@@ -9,8 +9,46 @@ const { RECEIVER_EMAIL } = process.env;
 // How far ahead of its time a match can be and still count as "the match we are waiting
 // for" (they last 30 seconds).
 const WAITING_MATCH_MAX_SECONDS = 60;
+const COIN_FLIP_MIN_ACCOUNT_AGE_DAYS = 7;
+const COIN_FLIP_MIN_APPROVED_DEPOSIT = 5000;
 
 class CoinFlipService {
+  static async getEligibility(userId) {
+    const user = await coinFlipModel.getUserEligibilityData(userId);
+    if (!user?.registered_at) {
+      throw new Error('User account was not found.');
+    }
+
+    const now = moment().tz('Asia/Kolkata');
+    const eligibleAt = moment
+      .tz(user.registered_at, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata')
+      .add(COIN_FLIP_MIN_ACCOUNT_AGE_DAYS, 'days');
+    const approvedDepositTotal = Number(user.approved_deposit_total || 0);
+    const accountAgeComplete = !now.isBefore(eligibleAt);
+    const depositComplete = approvedDepositTotal >= COIN_FLIP_MIN_APPROVED_DEPOSIT;
+    const reasons = [];
+
+    if (!accountAgeComplete) reasons.push('ACCOUNT_AGE_NOT_MET');
+    if (!depositComplete) reasons.push('MINIMUM_DEPOSIT_NOT_MET');
+
+    return {
+      eligible: accountAgeComplete && depositComplete,
+      accountAge: {
+        requiredDays: COIN_FLIP_MIN_ACCOUNT_AGE_DAYS,
+        complete: accountAgeComplete,
+        eligibleAt: eligibleAt.format('YYYY-MM-DD HH:mm:ss'),
+        daysRemaining: Math.max(0, Math.ceil(eligibleAt.diff(now, 'hours', true) / 24)),
+      },
+      deposit: {
+        requiredAmount: COIN_FLIP_MIN_APPROVED_DEPOSIT,
+        approvedTotal: approvedDepositTotal,
+        remainingAmount: Math.max(0, COIN_FLIP_MIN_APPROVED_DEPOSIT - approvedDepositTotal),
+        complete: depositComplete,
+      },
+      reasons,
+    };
+  }
+
   static async currentCoinFlipMatch() {
     try {
       return await coinFlipModel.fetchCurrentMatch();
