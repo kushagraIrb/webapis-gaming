@@ -12,19 +12,4 @@ router.get('/mine', async (req, res) => {
     return res.status(200).send({ status: true, data: { features } });
 });
 
-// GET /api/features/test -> { status: true, data: { version: 'new' | 'old', message } }
-// The harmless feature "Feature Launch Test" (Admin Area > Feature Launch) for trying a launch by hand: the user
-// website page /feature-test shows this answer. It is the same server-side check a real feature uses.
-// REMOVE with the page /feature-test (Gaming-Helper src/pages/FeatureTest.tsx) when it is no longer needed.
-router.get('/test', async (req, res) => {
-    const on = await featureModel.isLiveForUser('feature_launch_test', req.user_id);
-    return res.status(200).send({
-        status: true,
-        data: {
-            version: on ? 'new' : 'old',
-            message: on ? 'The new version is switched on for you.' : 'You are still on the old version.',
-        },
-    });
-});
-
 module.exports = router;
