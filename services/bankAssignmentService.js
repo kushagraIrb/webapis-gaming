@@ -4,6 +4,10 @@ const depositModel = require('../models/depositModel');
 const { rankAccounts } = require('../utils/bankAssignmentRank');
 const { logger } = require('../logger');
 const { notifyAdmin } = require('../helpers/notifyAdmin');
+const featureModel = require('../models/featureModel');
+
+// The feature key in Admin Area > Feature Launch
+const FEATURE_KEY = 'bank_assignment';
 
 // Which admin bank account a user is shown on the deposit page (range -> accounts, plus universal accounts),
 // remembered per user, with a "switch account" option. Rules: gamingAdminNode docs / Bank_Assignment_Documentation.
@@ -180,9 +184,11 @@ class BankAssignmentService {
 
     // ── Step 1: the user confirmed an amount ───────────────────────────────────
 
-    // Returns { configured: false } while no range is set up (the caller then uses the old rotation).
+    // Returns { configured: false } while no range is set up, or while the feature has not been launched for this
+    // user in Admin Area > Feature Launch (the caller then uses the old rotation).
     static async assign(userId, rawAmount) {
         const amount = parseAmount(rawAmount);
+        if (!(await featureModel.isLiveForUser(FEATURE_KEY, userId))) return { configured: false };
         if (!(await model.isConfigured())) return { configured: false };
 
         const settings = await model.getSettings();

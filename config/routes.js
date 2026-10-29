@@ -24,6 +24,7 @@ const routes = [
     { path: '/api/with-proof', router: require('../routes/withdrawalProofRouter') },
     { path: '/api/match-id', router: require('../routes/matchIdRouter.js') },
     { path: '/api/internal', router: require('../routes/internalRouter') },
+    { path: '/api/features', router: require('../routes/featureRouter') },
 ];
 
 module.exports = (app) => {
