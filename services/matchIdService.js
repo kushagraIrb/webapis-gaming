@@ -47,37 +47,42 @@ class MatchIdService {
                 requestedAmount
             );
     
-            // fetch user + site details
-            const user = await matchIdModel.getUserSiteDetails(userId, siteId);
-    
-            if (user) {
-    
-                const emailContent = `
-                    <h3>New Match ID Request</h3>
-                    <p><strong>User:</strong> ${user.first_name} ${user.last_name} (${user.phone})</p>
-                    <p><strong>Site Name:</strong> ${user.site_name}</p>
-                    <p><strong>Requested Amount:</strong> ₹${requestedAmount}</p>
-                    <p><strong>Transfer Type:</strong> New ID (APP -> ID)</p>
-                `;
-    
-                try {
-                    await sendMail(
-                        'matchid459@gmail.com',
-                        'New Match ID Request',
-                        emailContent
-                    );
-                } catch (mailErr) {
-                    console.error('Email sending failed:', mailErr.message);
-                }
-            }
-    
+            // The email to the support inbox is only a notification and the request is already
+            // saved, so it is sent in the background (see emailTransferRequest).
+            MatchIdService.emailMatchIdRequest(userId, siteId, requestedAmount);
+
             return matchIdReqId;
         } catch (error) {
             console.error('Error in Match ID Service:', error.message);
             throw new Error('Failed to create match id request');
         }
     }
-    
+
+    // Emails the support inbox about a new Match ID request. Runs detached from the request
+    // (nothing awaits it), so it must never throw: any failure is only logged.
+    static async emailMatchIdRequest(userId, siteId, requestedAmount) {
+        try {
+            const user = await matchIdModel.getUserSiteDetails(userId, siteId);
+            if (!user) return;
+
+            const emailContent = `
+                <h3>New Match ID Request</h3>
+                <p><strong>User:</strong> ${user.first_name} ${user.last_name} (${user.phone})</p>
+                <p><strong>Site Name:</strong> ${user.site_name}</p>
+                <p><strong>Requested Amount:</strong> ₹${requestedAmount}</p>
+                <p><strong>Transfer Type:</strong> New ID (APP -> ID)</p>
+            `;
+
+            await sendMail(
+                'matchid459@gmail.com',
+                'New Match ID Request',
+                emailContent
+            );
+        } catch (mailErr) {
+            console.error('Email sending failed:', mailErr.message);
+        }
+    }
+
     static async getUserMatchIds(userId, page, perPage) {
         try {
             const start = (page - 1) * perPage;
@@ -129,38 +134,44 @@ class MatchIdService {
                 amount: Number(amount || 0),
             });
 
-            // Fetch user + site details
-            const user = await matchIdModel.getUserSiteDetails(userId, siteId);
-    
-            if (user) {
-    
-                const emailContent = `
-                    <h3>New Transfer Request</h3>
-                    <p><strong>User:</strong> ${user.first_name} ${user.last_name} (${user.phone})</p>
-                    <p><strong>Site Name:</strong> ${user.site_name}</p>
-                    <p><strong>Requested Amount:</strong> ₹${amount}</p>
-                    <p><strong>Transfer Type:</strong> ${transferType}</p>
-                `;
-    
-                try {
-                    await sendMail(
-                        'matchid459@gmail.com',
-                        'New Transfer Request',
-                        emailContent
-                    );
-                } catch (mailErr) {
-                    console.error('Email sending failed:', mailErr.message);
-                }
-            }
-    
+            // The email to the support inbox is only a notification and the request is already
+            // saved, so it is sent in the background. It used to be awaited here, and sendMail
+            // opens two SMTP sessions (verify, then send), so Submit waited for both.
+            MatchIdService.emailTransferRequest(userId, siteId, transferType, amount);
+
             return result;
-    
+
         } catch (error) {
             console.error('Error in Transfer Service:', error.message);
             throw new Error('Failed to create transfer request');
         }
     }
-    
+
+    // Emails the support inbox about a new transfer request. Runs detached from the request
+    // (nothing awaits it), so it must never throw: any failure is only logged.
+    static async emailTransferRequest(userId, siteId, transferType, amount) {
+        try {
+            const user = await matchIdModel.getUserSiteDetails(userId, siteId);
+            if (!user) return;
+
+            const emailContent = `
+                <h3>New Transfer Request</h3>
+                <p><strong>User:</strong> ${user.first_name} ${user.last_name} (${user.phone})</p>
+                <p><strong>Site Name:</strong> ${user.site_name}</p>
+                <p><strong>Requested Amount:</strong> ₹${amount}</p>
+                <p><strong>Transfer Type:</strong> ${transferType}</p>
+            `;
+
+            await sendMail(
+                'matchid459@gmail.com',
+                'New Transfer Request',
+                emailContent
+            );
+        } catch (mailErr) {
+            console.error('Email sending failed:', mailErr.message);
+        }
+    }
+
     static async supportChatsListing(userId) {
         try {
             return await matchIdModel.supportChatsListing(userId);

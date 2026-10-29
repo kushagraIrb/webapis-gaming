@@ -5,6 +5,14 @@ on:
     branches:
       - development
 
+# Never run two deploys to the dev server at once. Two overlapping runs (GitHub started two for
+# one push) both ran "npm rebuild bcrypt" in the same folder and broke each other's compile.
+# A second run waits for the first instead; cancel-in-progress stays false so a deploy is never
+# cut off halfway through npm install.
+concurrency:
+  group: deploy-development
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-24.04

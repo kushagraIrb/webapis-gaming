@@ -79,6 +79,36 @@ class DepositModel {
         }
     }
 
+    // The user's most recent deposit, flagged when an admin added it by hand
+    // ("W&D with Screenshot" in the admin panel leaves a 'Deposit by Admin'
+    // entry in the wallet ledger for the deposit row).
+    static async getLastDeposit(userId) {
+        const query = `
+            SELECT
+                dl.id,
+                dl.deposit_id,
+                EXISTS (
+                    SELECT 1
+                    FROM tbl_transaction_history th
+                    WHERE th.user_id = dl.user_id
+                      AND th.transaction_pk = dl.id
+                      AND th.t_status = 'Deposit by Admin'
+                ) AS added_by_admin
+            FROM tbl_deposit_list dl
+            WHERE dl.user_id = ?
+              AND dl.fake_deposit = 0
+            ORDER BY dl.id DESC
+            LIMIT 1
+        `;
+        try {
+            const [rows] = await db.promise().query(query, [userId]);
+            return rows.length > 0 ? rows[0] : null;
+        } catch (error) {
+            console.error('Error fetching last deposit:', error.message);
+            throw new Error('Failed to fetch deposit data from the database');
+        }
+    }
+
     static async getDepositsByDate(depositDate) {
         const query = `
             SELECT deposit_id

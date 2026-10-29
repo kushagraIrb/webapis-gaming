@@ -3,6 +3,8 @@ const userModel = require('../models/userModel');
 const stringSimilarity = require('string-similarity');
 const { logger } = require('../logger');
 const DepositAiAnalysisService = require('./depositAiAnalysisService');
+const OcrSettingModel = require('../models/ocrSettingModel');
+const BankAssignmentService = require('./bankAssignmentService');
 
 class DepositService {
     // Fetch deposit history or count for a user
@@ -29,6 +31,20 @@ class DepositService {
         }
     }
 
+    // The bank account for a user and amount: the assigned account while Bank Assignment is set up, the old rotation
+    // until then. `assignment` is null on the old rotation. `data` keeps the old shape (the bank row).
+    static async getBankAccountForUser(userId, depositAmount) {
+        try {
+            const assigned = await BankAssignmentService.assign(userId, depositAmount);
+            if (assigned.configured) return { data: assigned.bank, assignment: assigned };
+            return { data: await BankAssignmentService.legacyAccount(depositAmount), assignment: null };
+        } catch (error) {
+            if (error.statusCode) throw error;
+            console.error('Error in depositService:', error.message);
+            throw new Error('Failed to fetch bank account');
+        }
+    }
+
     // Save deposit for a user
     static async saveDeposit(userId, depositData, file) {
         try {
@@ -41,7 +57,7 @@ class DepositService {
             // Validate required fields.
             // deposit_amount   — NOT required: derived from AI, may be null if extraction failed.
             // deposit_date     — NOT required: derived from OCR, may be null if date unreadable.
-            if (!deposit_id || !deposit_amount_step1 || !bank_owner_name) {
+            if (!deposit_id || !deposit_amount_step1) {
                 const err = new Error('Some data is missing.');
                 err.statusCode = 400;
                 throw err;
@@ -109,6 +125,8 @@ class DepositService {
             // If AI extraction failed or the amount is absent, deposit_amount is NULL —
             // we deliberately do NOT fall back to the user amount.  A null deposit_amount
             // is a clear signal that screenshot extraction did not produce a result.
+            // The one exception is Google OCR, which has no AI amount at all - see
+            // "deposit_amount for Google OCR" below.
             //
             // tbl_transaction_history.credit_amount always uses deposit_amount_step1
             // (user entered) — the AI amount never affects the wallet credit.
@@ -193,12 +211,32 @@ class DepositService {
                 throw err;
             }
 
-            // ─────────────────────────────────────────────────────────────────
-            // STEP 3 — OLD STRING SIMILARITY ON SAME DATE  (fallback)
-            //
-            // Catches near-duplicate deposit IDs (OCR artefacts, typos) when
-            // neither AI check nor exact match fired.
-            // ─────────────────────────────────────────────────────────────────
+            // Last deposit added manually by an admin ("W&D with Screenshot"): the
+            // admin records only the LAST 5 digits of the transaction ID, so the
+            // exact match above cannot see it. If this screenshot's transaction
+            // ID ends with those 5 digits it is the same screenshot again.
+            const lastDeposit = await depositModel.getLastDeposit(userId);
+            const adminEnteredId = lastDeposit ? String(lastDeposit.deposit_id ?? '').trim() : '';
+            // The five digits the admin typed. An admin deposit that repeated an earlier
+            // Transaction ID is saved as "<5 digits>-<n>" (for example 08396-2); the
+            // digits are still those five.
+            const adminLastFive = (/^(\d{5})(?:-\d+)?$/.exec(adminEnteredId) || [])[1];
+            if (
+                lastDeposit &&
+                lastDeposit.added_by_admin &&
+                adminLastFive &&
+                String(deposit_id).trim().endsWith(adminLastFive)
+            ) {
+                console.warn(
+                    `saveDeposit: matches last manual deposit — user=${userId} deposit_id=${deposit_id} ` +
+                    `admin_entered_id=${adminEnteredId} last_deposit_list_id=${lastDeposit.id}`
+                );
+                const err = new Error('This screenshot has already been approved. Please try again with a different screenshot.');
+                err.statusCode = 409;
+                throw err;
+            }
+
+            // Check same screenshot timestamp/deposit date
             const depositsWithSameDate = await depositModel.getDepositsByDate(deposit_date);
 
             if (depositsWithSameDate.length > 0) {
@@ -219,15 +257,55 @@ class DepositService {
                 }
             }
 
+            // ── deposit_amount for Google OCR ─────────────────────────────────
+            // Google Vision only reads the transaction ID and date, so it sends no AI analysis
+            // and there is no AI amount. While Google is the selected OCR engine, deposit_amount
+            // is the amount the user entered - exactly deposit_amount_step1 - as it was before
+            // the Python OCR existed.
+            //
+            // Decided on the server (the engine selected in the admin panel) and only when no AI
+            // data came with the request, never from what the browser claims: a Python-mode
+            // deposit that arrives without AI data still gets NULL, and an AI amount that did
+            // come with the request is never overwritten. Read only now, after every rejection
+            // above, so a rejected deposit costs no extra query. If the setting cannot be read the
+            // deposit is still saved with NULL, exactly as before.
+            let depositAmount = aiExtractedAmount;
+            if (depositAmount === null && !rawAiAnalysis) {
+                try {
+                    const selectedEngine = await OcrSettingModel.getEngine();
+                    if (String(selectedEngine || '').trim().toLowerCase() === 'google') {
+                        depositAmount = deposit_amount_step1;
+                        logger.info(
+                            `saveDeposit: Google OCR (no AI amount) — deposit_amount set to the user amount ` +
+                            `user=${userId} deposit_id=${deposit_id} amount=₹${deposit_amount_step1}`,
+                        );
+                    }
+                } catch (error) {
+                    logger.warn(
+                        `saveDeposit: could not read the OCR engine setting, deposit_amount left NULL — ` +
+                        `user=${userId} deposit_id=${deposit_id}: ${error.message}`,
+                    );
+                }
+            }
+
+            // Bank Assignment: the account this deposit belongs to. The holder name comes from the account on the
+            // server, not from the browser. Never blocks a deposit: on any problem it is saved the old way.
+            let bankCtx = null;
+            try {
+                bankCtx = await BankAssignmentService.resolveForSave(userId, depositData.assignment_id);
+            } catch (error) {
+                logger.error(`saveDeposit: bank assignment lookup failed user=${userId}: ${error.message}`, { stack: error.stack });
+            }
+
             // Prepare deposit data
             const data = {
                 userId,
                 deposit_id,
-                deposit_amount:       aiExtractedAmount,  // AI extracted (null if extraction failed)
+                deposit_amount:       depositAmount,      // AI extracted; user amount under Google OCR; NULL if neither
                 deposit_amount_step1,                     // user entered (always present)
                 deposit_date,
                 deposit_screenshot,
-                bank_owner_name
+                bank_owner_name: bankCtx && bankCtx.bank.name ? bankCtx.bank.name : bank_owner_name
             };
 
             // Save deposit
@@ -235,6 +313,11 @@ class DepositService {
 
             if (result) {
                 const depositListId = result.insertId;
+
+                // Link the deposit to its bank account and count it in the account's day total
+                await BankAssignmentService.recordDeposit(bankCtx, {
+                    userId, depositListId, amount: parseFloat(deposit_amount_step1),
+                });
 
                 // ── AI Analysis persistence ───────────────────────────────────
                 // Fire-and-forget: runs in the background after the deposit row

@@ -8,6 +8,9 @@ const { RECEIVER_EMAIL } = process.env;
 
 const COIN_FLIP_MIN_ACCOUNT_AGE_DAYS = 7;
 const COIN_FLIP_MIN_APPROVED_DEPOSIT = 5000;
+// How far ahead of its time a match can be and still count as "the match we are waiting
+// for" (they last 30 seconds).
+const WAITING_MATCH_MAX_SECONDS = 60;
 
 class CoinFlipService {
   static async getEligibility(userId) {
@@ -126,32 +129,32 @@ class CoinFlipService {
     }
   }
 
-  static async calculateWalletAmount(userId) {
+  static async calculateWalletAmount(userId, connection) {
     try {
       // Step 1: Get the maximum transaction ID for the user
-      const maxTransId = await coinFlipModel.getMaxTransactionId(userId);
+      const maxTransId = await coinFlipModel.getMaxTransactionId(userId, connection);
       if (!maxTransId) {
         return 0; // No transactions found
       }
 
       // Step 2: Get the wallet amount for the maximum transaction ID
-      const walletAmount = await coinFlipModel.getWalletAmountByTransactionId(maxTransId);
+      const walletAmount = await coinFlipModel.getWalletAmountByTransactionId(maxTransId, connection);
       return walletAmount;
     } catch (error) {
       throw new Error('Error calculating wallet amount');
     }
   }
 
-  static async calculateBonus(userId) {
+  static async calculateBonus(userId, connection) {
     try {
       // Step 1: Get the maximum bonus ID for the user
-      const maxBonusId = await coinFlipModel.getMaxBonusId(userId);
+      const maxBonusId = await coinFlipModel.getMaxBonusId(userId, connection);
       if (!maxBonusId) {
         return 0; // No bonuses found
       }
 
       // Step 2: Get the bonus amount for the maximum bonus ID
-      const bonusAmount = await coinFlipModel.getBonusAmountByBonusId(maxBonusId);
+      const bonusAmount = await coinFlipModel.getBonusAmountByBonusId(maxBonusId, connection);
       return bonusAmount;
     } catch (error) {
       throw new Error('Error fetching bonus amount');
@@ -263,7 +266,7 @@ class CoinFlipService {
       }
 
       // Agar matchDetails ek array return karta hai, to pehla element use karein
-      const { match_date, match_time } = matchDetails[0];
+      const { match_date, match_time, status, final_result } = matchDetails[0];
       console.log('match_date:', match_date);
       console.log('match_time:', match_time);
 
@@ -296,8 +299,16 @@ class CoinFlipService {
       const isBettingWindowClosed = now.isAfter(bettingDeadline);
       console.log('isBettingWindowClosed:', isBettingWindowClosed)
 
+      // A match that has already been settled takes no more bets, whatever the clock says:
+      // its result is fixed, so a bet placed now would never be evaluated or paid (this
+      // is what happened on 25 Oct 2026, when matches were settled seconds after being
+      // created while their 30 second countdown was still running on players' screens).
+      const hasResult = final_result !== null && final_result !== undefined
+        && String(final_result).trim() !== '';
+      const isAlreadySettled = Number(status) !== 1 || hasResult;
+
       // Agar betting band ho chuki hai, to 'true' return hoga, aur controller mein bet ruk jaayegi.
-      return { isMatchOver: isBettingWindowClosed };
+      return { isMatchOver: isBettingWindowClosed || isAlreadySettled };
 
     } catch (error) {
       // Error ko theek se log karein
@@ -460,11 +471,199 @@ class CoinFlipService {
         return { match, result };
     }
 
-  static async giveWinnings(match, result) {
+  /*
+  | settleEligibleMatch()
+  |
+  | Combines what used to be two separate, unsynchronized calls --
+  | getEligibleMatch() (decide + write the result) and giveWinnings()
+  | (pay winners) -- into one critical section, serialized against any
+  | other concurrent settlement attempt.
+  |
+  | IMPORTANT: mutual exclusion here is a MySQL/MariaDB named advisory
+  | lock (GET_LOCK/RELEASE_LOCK), NOT a row lock inside a DB transaction.
+  | An earlier version of this method used SELECT ... FOR UPDATE inside
+  | a BEGIN/COMMIT transaction, on the assumption that would serialize
+  | concurrent callers the way it does on InnoDB. It does not: verified
+  | directly against this database that tbl_upcoming_match_coinflip,
+  | tbl_coin_bet, tbl_coin_report, tbl_coin_winner and
+  | tbl_transaction_history are all MyISAM, which has no transaction or
+  | row-locking support at all -- BEGIN/COMMIT/FOR UPDATE on those tables
+  | are silent no-ops. A concurrency test (two simultaneous calls against
+  | the same match) proved this: both calls ran the decision logic, and
+  | only the pre-existing check-then-insert duplicate guards in
+  | insertCoinWinner/insertTransaction happened to prevent a double
+  | payout -- which is luck, not a guarantee, since MyISAM gives those
+  | checks no isolation either.
+  |
+  | A named lock has no such dependency -- it's a server-level primitive
+  | that works regardless of any table's storage engine, so it actually
+  | delivers the serialization the task asked for, on the schema as it
+  | exists today. tbl_coin_selected_users IS InnoDB, so the forced-loss
+  | counter increment and the stop-condition update are additionally
+  | protected by real row locks; the BEGIN/COMMIT here still wraps that
+  | part correctly, it just isn't what's preventing double-settlement of
+  | the match itself.
+  |
+  | Converting the MyISAM tables to InnoDB would let a real DB
+  | transaction do this job instead, and would bring coin-flip in line
+  | with tbl_deposit_list/tbl_withdrawal (already InnoDB) -- but that's a
+  | separate, higher-blast-radius decision (full table rewrite on live
+  | ledger tables) deliberately left out of this change pending explicit
+  | sign-off.
+  |
+  | Returns null if there's no eligible match, another call already
+  | settled it, or the lock could not be acquired within the timeout
+  | (treated as "try again next tick", not an error).
+  */
+  static async settleEligibleMatch({ thenCreateNext = false } = {}) {
+    const db = require('../config/database');
+    const connection = await db.promise().getConnection();
+    const LOCK_NAME = 'coinflip_settlement';
+    const LOCK_TIMEOUT_SECONDS = 10;
+    let lockAcquired = false;
+
+    try {
+      const [[lockRow]] = await connection.query(
+        'SELECT GET_LOCK(?, ?) AS acquired',
+        [LOCK_NAME, LOCK_TIMEOUT_SECONDS]
+      );
+      lockAcquired = lockRow.acquired === 1;
+
+      if (!lockAcquired) {
+        // Whoever holds the lock is settling right now and creates the next match when it
+        // is done, so this call must not create one as well.
+        console.warn(`[coin-flip] Could not acquire '${LOCK_NAME}' lock within ${LOCK_TIMEOUT_SECONDS}s -- another settlement is likely still running. Skipping this attempt.`);
+        return null;
+      }
+
+      const match = await coinFlipModel.getEligibleMatch();
+      if (!match) {
+        return null;
+      }
+
+      // Calls queue for the lock (a burst of overlapping /create-winner requests, as on
+      // 25 Oct 2026); by the time one gets it, an earlier call may already have settled
+      // the finished match and created a new one, which is not due yet and must not be
+      // settled early.
+      if (!this._isMatchDue(match)) {
+        return null;
+      }
+
+      return await this._settleMatch(match, connection);
+    } catch (error) {
+      throw new Error('Error in settleEligibleMatch: ' + error.message);
+    } finally {
+      if (lockAcquired) {
+        // The next match is created only after settling has finished, one way or the
+        // other, and still under the lock, so "settle" and "create" can never interleave
+        // between two overlapping calls. If settling failed, that match is abandoned:
+        // the next match is created all the same (the game never stops), and since only
+        // the newest unsettled match is ever settled, nothing retries the failed one.
+        // createGame() itself only refuses while the newest match has not reached its
+        // time yet.
+        if (thenCreateNext) {
+          await this._createNextMatchSafely();
+        }
+        await connection.query('SELECT RELEASE_LOCK(?)', [LOCK_NAME]).catch(() => {});
+      }
+      connection.release();
+    }
+  }
+
+  // Decides the result of one finished match and pays its winners. Called with the
+  // settlement lock held; rolls back and rethrows on failure.
+  static async _settleMatch(match, connection) {
+    try {
+      await connection.beginTransaction();
+
+      let result = match.result;
+      // { userId, mode, newCount } when a forced loss was applied this
+      // round -- used after payout to decide whether to auto-deactivate.
+      let forcedLossInfo = null;
+
+      if (result === 'Automatic') {
+        const highestBidder = await coinFlipModel.getHighestBidder(match.id, connection);
+
+        // highestBidder.mode is only non-null when the LEFT JOIN matched
+        // an ACTIVE row in tbl_coin_selected_users for this user -- i.e.
+        // exactly the same fact the old code re-confirmed with a second
+        // getSelectedUser() call. One query, one snapshot, taken while
+        // holding the settlement lock -- no separate read that could
+        // observe a different state.
+        if (highestBidder && highestBidder.mode) {
+          result = highestBidder.prediction === 'Head' ? 'Tail' : 'Head';
+
+          const newCount = await coinFlipModel.incrementForcedLoss(highestBidder.user_id, connection);
+          forcedLossInfo = {
+            userId: highestBidder.user_id,
+            mode: highestBidder.mode,
+            newCount,
+          };
+        } else {
+          result = Math.random() < 0.5 ? 'Head' : 'Tail';
+        }
+      }
+
+      await coinFlipModel.updateMatchResult(match.id, result, connection);
+      await this.giveWinnings(match, result, connection);
+
+      if (forcedLossInfo) {
+        await this._applyForcedLossStopCondition(forcedLossInfo, connection);
+      }
+
+      await connection.commit();
+      return { match, result };
+    } catch (error) {
+      try { await connection.rollback(); } catch { /* connection may already be broken */ }
+      const message = `Service: settleEligibleMatch (match ${match.id}) - ` + error.message;
+      console.error(message);
+      logger.error(message, { stack: error.stack });
+      throw error;
+    }
+  }
+
+  /*
+  | _applyForcedLossStopCondition({ userId, mode, newCount }, connection)
+  |
+  | lose_8_games:    unchanged from the original behavior -- deactivate
+  |                   once newCount reaches 8.
+  | lose_until_zero: deactivate once the user's current wallet+bonus
+  |                   balance is 0 or below the current minimum bet.
+  |                   Bet placement already debits the stake at the time
+  |                   the bet is placed (see CoinFlipController.saveCoinBet
+  |                   step 9) and a forced LOSS credits nothing back --
+  |                   so calculateWalletAmount/calculateBonus, read here
+  |                   right after the loss, already reflect the post-loss
+  |                   balance with no extra arithmetic needed.
+  */
+  static async _applyForcedLossStopCondition({ userId, mode, newCount }, connection) {
+    if (mode === 'lose_8_games') {
+      if (newCount !== null && newCount >= 8) {
+        await coinFlipModel.softRemoveSelectedUser(userId, connection);
+      }
+      return;
+    }
+
+    // lose_until_zero
+    const [wallet, bonus, minBet] = await Promise.all([
+      this.calculateWalletAmount(userId, connection),
+      this.calculateBonus(userId, connection),
+      coinFlipModel.fetchMinBetAmount(connection),
+    ]);
+
+    const balance = parseFloat(wallet) + parseFloat(bonus);
+    const minimumBet = parseFloat(minBet) || 0;
+
+    if (balance <= 0 || balance < minimumBet) {
+      await coinFlipModel.softRemoveSelectedUser(userId, connection);
+    }
+  }
+
+  static async giveWinnings(match, result, connection) {
     try {
       const { id: matchId, win_ratio } = match;
 
-      const winUsers = await coinFlipModel.getWinningUsers(matchId, result);
+      const winUsers = await coinFlipModel.getWinningUsers(matchId, result, connection);
 
       if (winUsers && winUsers.length > 0) {
         for (const bet of winUsers) {
@@ -474,7 +673,7 @@ class CoinFlipService {
           const winAmount = (win_ratio / 100) * amount;
           const totalUserAmount = amount + winAmount;
 
-          const currentWallet = parseFloat(await this.calculateWalletAmount(userId));
+          const currentWallet = parseFloat(await this.calculateWalletAmount(userId, connection));
           const newWallet = currentWallet + totalUserAmount;
 
           const winnerData = {
@@ -482,7 +681,7 @@ class CoinFlipService {
             match_id: matchId,
             userBy: userId,
           };
-          const winId = await coinFlipModel.insertCoinWinner(winnerData);
+          const winId = await coinFlipModel.insertCoinWinner(winnerData, connection);
 
           const txnData = {
             bet_id: bet.bet_id,
@@ -495,8 +694,8 @@ class CoinFlipService {
             type: 'Credit',
             t_status: 'Win',
           };
-          await coinFlipModel.insertTransaction(txnData);
-          await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount);
+          await coinFlipModel.insertTransaction(txnData, connection);
+          await coinFlipModel.updateCoinReport(bet.bet_id, totalUserAmount, connection);
         }
       } else {
         console.log(`No winners for match ${matchId} with result ${result}.`);
@@ -517,6 +716,45 @@ class CoinFlipService {
     // }
   }
 
+  /*
+  | A match is "due" once its time (match_date + match_time, IST) is within 5 seconds --
+  | the same rule createWinner() used before settling. Kept in one place so the check
+  | made before settling and the guard made before creating cannot drift apart.
+  */
+  static _secondsUntilMatch(match) {
+    const matchDateTime = moment.tz(
+      `${moment(match.match_date).format('YYYY-MM-DD')} ${match.match_time}`,
+      'YYYY-MM-DD HH:mm:ss',
+      'Asia/Kolkata'
+    );
+    if (!matchDateTime.isValid()) return NaN;
+    return matchDateTime.diff(moment.tz('Asia/Kolkata'), 'seconds', true);
+  }
+
+  static _isMatchDue(match, bufferSeconds = 5) {
+    return this._secondsUntilMatch(match) <= bufferSeconds;
+  }
+
+  // "Waiting" = the match players are betting on right now: its time has not come yet.
+  // Only the clock decides, never whether the match was settled, so a match that failed
+  // to settle can never hold up the next one; a match with an unreadable time, or one so
+  // far ahead that it cannot be a 30-second match, does not count either.
+  static _isMatchWaiting(match, bufferSeconds = 5) {
+    if (!match) return false;
+    const secondsToGo = this._secondsUntilMatch(match);
+    return secondsToGo > bufferSeconds && secondsToGo <= WAITING_MATCH_MAX_SECONDS;
+  }
+
+  // createGame() for use from the settlement path: a failure to create must never turn
+  // a finished settlement into an error response (same as the old controller code).
+  static async _createNextMatchSafely() {
+    try {
+      await this.createGame();
+    } catch (err) {
+      console.error('❌ createGame failed:', err.message);
+    }
+  }
+
   // Create games based on repeatable matches
   static async createGame() {
     try {
@@ -525,8 +763,22 @@ class CoinFlipService {
 
       // Iterate over each match and create new games
       for (const row of repeatableMatches) {
+        // The admin's off switch: a repeatable match that is not live and active is not
+        // repeated (its copies would never show up as the current match anyway).
+        if (Number(row.isLive) !== 1 || Number(row.cancel) !== 1) continue;
+
         // Get the last copy of the match
         const latest = await coinFlipModel.getLastCopyOfMatch(row.id);
+
+        // A new match is created once the newest one has reached its time, whether or not
+        // it was settled -- the game keeps going every 30 seconds whatever happened to the
+        // previous match. The only thing that holds a creation back is the newest match
+        // still counting down: a burst of overlapping calls would otherwise create one
+        // match per call.
+        if (this._isMatchWaiting(latest)) {
+          console.log(`[coin-flip] Not creating a new match: match ${latest.id} has not reached its time yet.`);
+          continue;
+        }
 
         const newGameData = {
           match_name: row.match_name,

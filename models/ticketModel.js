@@ -1,6 +1,21 @@
 const db = require('../config/database');
 const moment = require('moment-timezone');
 
+// tbl_support_ticket.closed_by ('user' | 'admin') says who closed a ticket, so the admin panel can
+// show it. The column comes from gamingAdminNode/migrations/20261021-support-ticket-closed-by.sql;
+// until that has been run closing a ticket must keep working, so the column is only written once it
+// exists (a "missing" answer is looked up again after a minute, so no restart is needed).
+let closedByColumn = { exists: false, checkedAt: 0 };
+
+async function hasClosedByColumn() {
+    if (closedByColumn.exists || Date.now() - closedByColumn.checkedAt < 60000) {
+        return closedByColumn.exists;
+    }
+    const [rows] = await db.promise().query("SHOW COLUMNS FROM tbl_support_ticket LIKE 'closed_by'");
+    closedByColumn = { exists: rows.length > 0, checkedAt: Date.now() };
+    return closedByColumn.exists;
+}
+
 class TicketModel {
     // Delete Ticket
     static async getTicketById(ticketId) {
@@ -19,9 +34,12 @@ class TicketModel {
         if (!tokenNos.length) return 0;
 
         const placeholders = tokenNos.map(() => '?').join(', ');
-        const query = `UPDATE tbl_support_ticket SET status = 'Close' WHERE token_no IN (${placeholders})`;
 
         try {
+            // A ticket that is already closed keeps whoever closed it first; listed before
+            // `status = 'Close'` so it still sees the old status.
+            const closedBy = (await hasClosedByColumn()) ? `closed_by = IF(status = 'Close', closed_by, 'user'), ` : '';
+            const query = `UPDATE tbl_support_ticket SET ${closedBy}status = 'Close' WHERE token_no IN (${placeholders})`;
             const [result] = await db.promise().query(query, tokenNos);
             return result.affectedRows;
         } catch (error) {
