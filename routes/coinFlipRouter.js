@@ -10,7 +10,6 @@ router.get('/current-server-time', coinFlipController.getServerTime);
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
-router.get('/eligibility', coinFlipController.eligibility);
 router.get('/current-match', coinFlipController.currentMatchDetails);
 router.get('/user-past-results', coinFlipController.userPastResults);
 
