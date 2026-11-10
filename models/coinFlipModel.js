@@ -307,13 +307,13 @@ class CoinFlipModel {
     // }
 
     // Place a bet and insert the bet data into the tbl_bet table
-    static async saveCoinBet(betData) {
+    static async saveCoinBet(betData, connection) {
         try {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
             const query = `
-                INSERT INTO tbl_coin_bet 
+                INSERT INTO tbl_coin_bet
                 (user_id, match_id, amount, bonus_amount, wallet_amount, prediction, bet_date)
 
                 SELECT ?, ?, ?, ?, ?, ?, ?
@@ -324,7 +324,7 @@ class CoinFlipModel {
                 AND TIMESTAMPDIFF(SECOND, ?, CONCAT(match_date, ' ', match_time)) >= 3
             `;
 
-            const [result] = await db.promise().query(query, [
+            const [result] = await exec(connection).query(query, [
                 betData.user_id,
                 betData.match_id,
                 betData.amount,
@@ -343,6 +343,87 @@ class CoinFlipModel {
             return { betId: result.insertId };  // Return the inserted bet ID along with the bet data
         } catch (error) {
             throw new Error('Error placing bet: ' + error.message);
+        }
+    }
+
+    /*
+    | Bet placement helpers. They all take the ONE transaction connection that
+    | CoinFlipService.placeBetAtomic holds, so the balance check, the bet row and
+    | the ledger debit commit (or roll back) together.
+    */
+
+    // Per-user mutex: every concurrent bet by the same user queues on this row.
+    static async lockUserForBetting(connection, userId) {
+        const [rows] = await connection.query(
+            `SELECT id, bonus_league_id FROM tbl_registration WHERE id = ? FOR UPDATE`,
+            [userId]
+        );
+        return rows[0] || null;
+    }
+
+    static async getLatestWalletForUpdate(connection, userId) {
+        const [rows] = await connection.query(
+            `SELECT trans_id, total_amount FROM tbl_transaction_history
+             WHERE user_id = ? ORDER BY trans_id DESC LIMIT 1 FOR UPDATE`,
+            [userId]
+        );
+        return rows.length
+            ? { transId: rows[0].trans_id, amount: parseFloat(rows[0].total_amount) || 0 }
+            : { transId: null, amount: 0 };
+    }
+
+    static async getLatestBonusForUpdate(connection, userId) {
+        const [rows] = await connection.query(
+            `SELECT total_bonus FROM tbl_bonus_history
+             WHERE user_id = ? ORDER BY bonus_id DESC LIMIT 1 FOR UPDATE`,
+            [userId]
+        );
+        return rows.length ? parseFloat(rows[0].total_bonus) || 0 : 0;
+    }
+
+    static async checkAlreadyBetForUpdate(connection, userId, matchId) {
+        const [rows] = await connection.query(
+            `SELECT bet_id FROM tbl_coin_bet WHERE user_id = ? AND match_id = ? AND status = 1 FOR UPDATE`,
+            [userId, matchId]
+        );
+        return rows.length > 0;
+    }
+
+    // The money tables are MyISAM (no rollback), so a failed placement is undone by hand.
+    static async deleteBetArtifacts(connection, betId, userId, matchId) {
+        await connection.query(`DELETE FROM tbl_coin_bet WHERE bet_id = ? AND user_id = ?`, [betId, userId]);
+        await connection.query(`DELETE FROM tbl_coin_report WHERE bet_id = ? AND user_id = ?`, [betId, userId]);
+        await connection.query(`DELETE FROM tbl_bonus_history WHERE bet_id = ? AND user_id = ? AND match_id = ? AND bonus_type = 'Debit' AND bonus_status = 'Bet'`, [betId, userId, matchId]);
+        await connection.query(`DELETE FROM tbl_transaction_history WHERE bet_id = ? AND user_id = ? AND coin_match_id = ? AND type = 'Debit' AND t_status = 'Bet'`, [betId, userId, matchId]);
+    }
+
+    // Compare-and-swap debit: only writes if the ledger's latest row is still exactly
+    // the row (and balance) the caller read under lock, otherwise 0 rows are inserted.
+    static async insertBetDebitIfUnchanged(connection, data) {
+        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+        const [result] = await connection.query(
+            `INSERT INTO tbl_transaction_history
+             (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id,
+              debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id)
+             SELECT 0, ?, ?, 0, 0, ?, ?, ?, ?, 'Debit', 'Bet', ?, ?
+             FROM tbl_transaction_history
+             WHERE trans_id = ? AND user_id = ? AND total_amount = ?`,
+            [
+                data.bet_id,
+                data.match_id,
+                data.user_id,
+                data.match_id,
+                data.debit_amount,
+                data.total_amount,
+                istTime,
+                data.bonus_league_id,
+                data.expectedTransId,
+                data.user_id,
+                data.expectedAmount,
+            ]
+        );
+        if (result.affectedRows === 0) {
+            throw new Error('Wallet changed while placing the bet');
         }
     }
 
@@ -371,13 +452,13 @@ class CoinFlipModel {
     }
 
     // Insert Report Data
-    static async insertReportData(reportData) {
+    static async insertReportData(reportData, connection) {
         try {
             // Get the current time in IST
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
             const query = `INSERT INTO tbl_coin_report (bet_id, user_id, bet_amount, bet_from_bonus, bet_from_wallet, inserted_date)VALUES (?, ?, ?, ?, ?, ?)`;
-            const [result] = await db.promise().query(query,
+            const [result] = await exec(connection).query(query,
                 [
                     reportData.bet_id,
                     reportData.user_id,
@@ -408,7 +489,7 @@ class CoinFlipModel {
     //     }
     // }
 
-    static async insertBonusData(bonusHistoryData) {
+    static async insertBonusData(bonusHistoryData, connection) {
         try {
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
 
@@ -449,7 +530,7 @@ class CoinFlipModel {
                 ];
             }
 
-            const [result] = await db.promise().query(query, values);
+            const [result] = await exec(connection).query(query, values);
             return { bonusId: result.insertId };
 
         } catch (error) {

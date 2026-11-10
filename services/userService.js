@@ -492,7 +492,7 @@ class UserService {
     static async validateUser(req, userData) {
         const loginQuery = userModel.getLoginQuery(userData.phone);
 
-        const [user] = await db.promise().query(loginQuery);
+        const [user] = await db.promise().query(loginQuery.sql, loginQuery.params);
 
         // If the user doesn't exist, return null
         if (!user || user.length === 0) {
@@ -630,10 +630,9 @@ class UserService {
                 throw err;
             }
 
-            const resetToken = Buffer.from(email).toString('base64');
-            const userIdToken = Buffer.from(user[0].id.toString()).toString('base64');
+            const resetToken = this.signResetToken(user[0]);
 
-            const resetLink = `${BASE_URL}/Verify?token=${resetToken}&vendorid=${userIdToken}`;
+            const resetLink = `${BASE_URL}/Verify?token=${encodeURIComponent(resetToken)}`;
             const emailSent = await this.sendResetEmail(user[0].email, user[0].first_name, resetLink);
 
             if (!emailSent) {
@@ -670,16 +669,45 @@ class UserService {
         }
     }
 
-    static async forgotUserPassword(newPassword, email) {
+    // Reset tokens are signed, expire in 30 minutes, and are bound to the user's current
+    // password hash, so they stop working as soon as the password is changed (single use).
+    static resetTokenSecret() {
+        return `${JWT_SECRET}:password-reset`;
+    }
+
+    static passwordFingerprint(user) {
+        return crypto.createHash('sha256').update(String(user.password || '')).digest('hex').slice(0, 32);
+    }
+
+    static signResetToken(user) {
+        return jwt.sign(
+            { id: user.id, purpose: 'password-reset', pf: this.passwordFingerprint(user) },
+            this.resetTokenSecret(),
+            { expiresIn: '30m' }
+        );
+    }
+
+    static async forgotUserPassword(newPassword, token) {
         try {
-            if (!email) {
-                return { success: false, msg: 'Email is required.' };
+            if (!token) {
+                return { success: false, msg: 'Invalid or expired reset link.' };
             }
 
-            const user = await userModel.findUserByEmail(email);
+            let decoded;
+            try {
+                decoded = jwt.verify(String(token), this.resetTokenSecret());
+            } catch (e) {
+                return { success: false, msg: 'Invalid or expired reset link.' };
+            }
 
-            if (!user || user.length === 0) {
-                return { success: false, msg: 'User not found with the provided email.' };
+            if (!decoded || decoded.purpose !== 'password-reset' || !decoded.id) {
+                return { success: false, msg: 'Invalid or expired reset link.' };
+            }
+
+            const user = await userModel.findUserById(decoded.id);
+
+            if (!user || user.length === 0 || this.passwordFingerprint(user[0]) !== decoded.pf) {
+                return { success: false, msg: 'Invalid or expired reset link.' };
             }
 
             const hashedPassword = await bcrypt.hash(newPassword, 10);

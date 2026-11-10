@@ -326,6 +326,128 @@ class CoinFlipService {
     }
   }
 
+  /*
+  | Places a coin-flip bet atomically.
+  |
+  | Everything that decides "can this user afford and place this bet" and everything that
+  | records it (bet row, report, bonus/wallet debit) happens on ONE transaction connection.
+  | Concurrent bets by the same user queue on a lock on their tbl_registration row, so the
+  | second one only starts after the first has committed and therefore sees the reduced
+  | balance and the existing bet. The wallet debit is also a compare-and-swap against the
+  | ledger row that was read, as a backstop against any writer that does not take that lock.
+  |
+  | Rejections are thrown as errors carrying `userMessage` + `statusCode`.
+  */
+  static async placeBetAtomic({ user_id, match_id, prediction, bet_amount, minimum_betamount }) {
+    const reject = (userMessage, statusCode = 401) => {
+      const err = new Error(userMessage);
+      err.userMessage = userMessage;
+      err.statusCode = statusCode;
+      return err;
+    };
+
+    const amount = Number(bet_amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw reject('Invalid bet amount.', 400);
+    }
+
+    const serverMin = parseFloat(await coinFlipModel.fetchMinBetAmount());
+    const minimumBet = Number.isFinite(serverMin) ? serverMin : (parseFloat(minimum_betamount) || 0);
+    if (amount < minimumBet) {
+      throw reject('Bet amount is less than the minimum bet amount!');
+    }
+
+    const db = require('../config/database');
+    const connection = await db.promise().getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      const user = await coinFlipModel.lockUserForBetting(connection, user_id);
+      if (!user) {
+        throw reject('Invalid user.');
+      }
+
+      if (await coinFlipModel.checkAlreadyBetForUpdate(connection, user_id, match_id)) {
+        throw reject('You have already placed a bet on this match!');
+      }
+
+      // The bet/ledger tables are MyISAM, so a rollback cannot undo their writes: every
+      // rejection check runs BEFORE the first write, and later failures are compensated.
+      const wallet = await coinFlipModel.getLatestWalletForUpdate(connection, user_id);
+      const bonusAmount = await coinFlipModel.getLatestBonusForUpdate(connection, user_id);
+
+      if (amount > wallet.amount + bonusAmount) {
+        throw reject('Your bet amount is greater than your wallet amount!');
+      }
+
+      let usedFromBonus = 0, usedFromWallet = 0;
+      if (bonusAmount >= amount) {
+        usedFromBonus = amount;
+      } else {
+        usedFromBonus = bonusAmount;
+        usedFromWallet = amount - bonusAmount;
+      }
+
+      // Bet row (re-checks that the match is still open).
+      let bet;
+      try {
+        bet = await coinFlipModel.saveCoinBet(
+          { user_id, match_id, amount, bonusAmount, walletAmount: wallet.amount, prediction },
+          connection
+        );
+      } catch (e) {
+        throw reject('Sorry! Betting is closed for this match. Money not deducted. Try again.');
+      }
+
+      try {
+        await coinFlipModel.insertReportData({
+          bet_id: bet.betId,
+          user_id,
+          bet_amount: amount,
+          bet_from_bonus: usedFromBonus,
+          bet_from_wallet: usedFromWallet,
+        }, connection);
+
+        if (usedFromBonus > 0) {
+          await coinFlipModel.insertBonusData({
+            user_id,
+            bet_id: bet.betId,
+            match_id,
+            debit_bonus: usedFromBonus,
+            total_bonus: bonusAmount - usedFromBonus,
+            bonus_type: 'Debit',
+            bonus_status: 'Bet',
+          }, connection);
+        }
+
+        if (usedFromWallet > 0) {
+          await coinFlipModel.insertBetDebitIfUnchanged(connection, {
+            bet_id: bet.betId,
+            match_id,
+            user_id,
+            debit_amount: usedFromWallet,
+            total_amount: wallet.amount - usedFromWallet,
+            bonus_league_id: user.bonus_league_id ?? null,
+            expectedTransId: wallet.transId,
+            expectedAmount: wallet.amount,
+          });
+        }
+      } catch (writeError) {
+        await coinFlipModel.deleteBetArtifacts(connection, bet.betId, user_id, match_id);
+        throw writeError;
+      }
+
+      await connection.commit();
+      return { betId: bet.betId, usedFromBonus, usedFromWallet };
+    } catch (error) {
+      try { await connection.rollback(); } catch (_) { /* connection already gone */ }
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
   // Get Bet by ID and User
   static async getBetByIdAndUser(user_id, bet_id) {
     try {

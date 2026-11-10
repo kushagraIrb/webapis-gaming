@@ -130,123 +130,41 @@ class CoinFlipController {
                 return res.status(401).json({ message: 'Betting is currently off.' });
             }
     
-            if (bet_amount < minimum_betamount) {
-                return res.status(401).json({ message: 'Bet amount is less than the minimum bet amount!' });
-            }
-
             // Step 3: Check if the betting is allowed by the admin or not (At the time of withdrawing the money user has access to toggle the betting rights of the user)
             const bettingRestricted = await liveBetService.isUserRestrictedFromBetting(user_id);
             if (bettingRestricted > 0) {
-                // ❌ At least one row has is_bet_allowed = 1
+                // At least one row has is_bet_allowed = 1
                 return res.status(401).json({
                     message: 'Withdrawal request is in progress. Please wait.',
                 });
             }
-    
-            // Step 4: Wallet & Bonus amount fetch + Bet existence check
-            const [walletAmountRaw, bonusAmountRaw, alreadyBetted] = await Promise.all([
-                coinFlipService.calculateWalletAmount(user_id),
-                coinFlipService.calculateBonus(user_id),
-                coinFlipService.checkAlreadyBet(user_id, match_id)
-            ]);
-    
-            const walletAmount = parseFloat(walletAmountRaw);
-            const bonusAmount = parseFloat(bonusAmountRaw);
-            const totalBalance = walletAmount + bonusAmount;
-    
-            if (bet_amount > totalBalance) {
-                return res.status(401).json({ message: 'Your bet amount is greater than your wallet amount!' });
+
+            // Step 4-9: balance check, bet row, report and wallet/bonus debit happen together,
+            // atomically and serialized per user (see CoinFlipService.placeBetAtomic).
+            let placed;
+            try {
+                placed = await coinFlipService.placeBetAtomic({
+                    user_id,
+                    match_id,
+                    prediction,
+                    bet_amount,
+                    minimum_betamount,
+                });
+            } catch (betError) {
+                if (betError.userMessage) {
+                    return res.status(betError.statusCode || 401).json({ message: betError.userMessage });
+                }
+                throw betError;
             }
-    
-            if (alreadyBetted) {
-                return res.status(401).json({ message: 'You have already placed a bet on this match!' });
-            }
-    
-            // Step 5: Calculate deduction split
-            let usedFromBonus = 0, usedFromWallet = 0;
-            if (bonusAmount >= bet_amount) {
-                usedFromBonus = bet_amount;
-            } else {
-                usedFromBonus = bonusAmount;
-                usedFromWallet = bet_amount - bonusAmount;
-            }
-    
-            const updatedBonus = bonusAmount - usedFromBonus;
-            const updatedWallet = walletAmount - usedFromWallet;
-    
-            // Step 6: Save Bet
-            const betData = {
-                user_id,
-                match_id,
-                amount: bet_amount,
-                bonusAmount,
-                walletAmount,
-                prediction,
-            };
-            const bet = await coinFlipService.placeCoinBet(betData);
-            const LastBetID = bet.betId;
-    
-            if (!LastBetID) {
-                return res.status(500).json({ error: 'Failed to place bet.' });
-            }
-    
-            const existingBet = await coinFlipService.getBetByIdAndUser(user_id, LastBetID);
-            if (!existingBet) {
-                return res.status(500).json({ error: 'Bet not found after placement.' });
-            }
-    
+
             // Step 7: Check threshold and send email
             const thresholdAmount = await coinFlipService.getThresholdAmount();
-            if (thresholdAmount && bet_amount > thresholdAmount) {
+            if (thresholdAmount && Number(bet_amount) > thresholdAmount) {
                 const userData = await coinFlipService.getUserDetails(user_id);
-                if (userData) 
-                {
-                    // YEH LINE ADD KAREIN
-                    console.log(`Email bhejne ki koshish kar raha hoon... Bet Amount: ${bet_amount}, Threshold: ${thresholdAmount}`);
-                    coinFlipService.sendEmail(userData, bet_amount).catch(console.error);
+                if (userData) {
+                    coinFlipService.sendEmail(userData, Number(bet_amount)).catch(console.error);
                 }
             }
-    
-            // Step 8: Insert report
-            const reportData = {
-                bet_id: LastBetID,
-                user_id,
-                bet_amount,
-                bet_from_bonus: usedFromBonus,
-                bet_from_wallet: usedFromWallet,
-            };
-            await coinFlipService.insertReport(reportData);
-    
-            // Step 9: Insert transaction history
-            const insertTasks = [];
-    
-            if (usedFromBonus > 0) {
-                const bonusHistory = {
-                    user_id,
-                    bet_id: LastBetID,
-                    match_id,
-                    debit_bonus: usedFromBonus,
-                    total_bonus: updatedBonus,
-                    bonus_type: 'Debit',
-                    bonus_status: 'Bet',
-                };
-                insertTasks.push(coinFlipService.insertBonusHistory(bonusHistory));
-            }
-    
-            if (usedFromWallet > 0) {
-                const walletHistory = {
-                    bet_id: LastBetID,
-                    match_id,
-                    user_id,
-                    debit_amount: usedFromWallet,
-                    total_amount: updatedWallet,
-                    type: 'Debit',
-                    t_status: 'Bet',
-                };
-                insertTasks.push(coinFlipService.insertTransactionHistory(walletHistory));
-            }
-    
-            await Promise.all(insertTasks);
     
             // Final Response
             return res.status(200).json({
