@@ -728,6 +728,70 @@ class LiveBetModel {
         return rows.length ? parseFloat(rows[0].total_amount) : 0;
     }
     
+    // Per-user mutex. tbl_registration is InnoDB, so this row lock really serializes every
+    // concurrent bet by the same user (the MyISAM money tables ignore FOR UPDATE).
+    static async lockUserForBetting(connection, userId) {
+        const [rows] = await connection.query(
+            `SELECT id FROM tbl_registration WHERE id = ? FOR UPDATE`,
+            [userId]
+        );
+        return rows[0] || null;
+    }
+
+    static async getWalletRowForUpdate(connection, userId) {
+        const [rows] = await connection.query(
+            `SELECT trans_id, total_amount
+             FROM tbl_transaction_history
+             WHERE user_id = ? ORDER BY trans_id DESC LIMIT 1
+             FOR UPDATE`,
+            [userId]
+        );
+        return rows.length
+            ? { transId: rows[0].trans_id, amount: parseFloat(rows[0].total_amount) || 0 }
+            : { transId: null, amount: 0 };
+    }
+
+    // Compare-and-swap debit: writes only if the ledger's latest row is still the exact row
+    // and balance that were read, otherwise nothing is inserted and the bet is refused.
+    static async insertBetDebitIfUnchanged(connection, data) {
+        const [result] = await connection.query(
+            `INSERT INTO tbl_transaction_history
+            (d_w_id, bet_id, match_id, withdrawal_id, win_id, user_id, coin_match_id,
+            debit_amount, total_amount, type, t_status, transaction_date, current_bonus_league_id)
+            SELECT 0, ?, ?, 0, 0, ?, 0, ?, ?, 'Debit', 'Bet', ?, NULL
+            FROM tbl_transaction_history
+            WHERE trans_id = ? AND user_id = ? AND total_amount = ?`,
+            [
+                data.betId,
+                data.match_id,
+                data.user_id,
+                data.walletUsed,
+                data.remainingWallet,
+                data.istTime,
+                data.expectedTransId,
+                data.user_id,
+                data.expectedAmount
+            ]
+        );
+        if (result.affectedRows === 0) {
+            throw new Error('Wallet changed while placing the bet. Please try again.');
+        }
+    }
+
+    // The money tables are MyISAM (no rollback), so a failed placement is undone by hand.
+    static async deleteBetArtifacts(connection, betId, userId, matchId) {
+        await connection.query(`DELETE FROM tbl_bet WHERE bet_id = ? AND user_id = ?`, [betId, userId]);
+        await connection.query(`DELETE FROM tbl_report WHERE bet_id = ? AND user_id = ?`, [betId, userId]);
+        await connection.query(
+            `DELETE FROM tbl_bonus_history WHERE bet_id = ? AND user_id = ? AND match_id = ? AND bonus_type = 'Debit' AND bonus_status = 'Bet'`,
+            [betId, userId, matchId]
+        );
+        await connection.query(
+            `DELETE FROM tbl_transaction_history WHERE bet_id = ? AND user_id = ? AND match_id = ? AND type = 'Debit' AND t_status = 'Bet'`,
+            [betId, userId, matchId]
+        );
+    }
+
     static async getBonusForUpdate(connection, userId) {
         const [rows] = await connection.query(
             `SELECT total_bonus 

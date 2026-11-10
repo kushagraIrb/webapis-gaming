@@ -231,10 +231,19 @@ class UserController {
     async login(req, res) {
         let apiResponseMsg = '';
         let result = 0;
-    
+
+        // Only plain text/number credentials are accepted: an object or array value (for
+        // example {"$ne":"x"}) must never reach the SQL layer or the login log.
+        const isPlain = (v) => v === undefined || v === null || typeof v === 'string' || typeof v === 'number';
+        if (!isPlain(req.body.phone) || !isPlain(req.body.password)) {
+            return res.status(400).json({ msg: 'Invalid phone or password format.' });
+        }
+        if (req.body.phone != null) req.body.phone = String(req.body.phone);
+        if (req.body.password != null) req.body.password = String(req.body.password);
+
         const phone = req.body.phone || null;
         const password = req.body.password || null;
-    
+
         // Prepare login query once (if phone exists)
         const loginQuery = phone ? userModel.getLoginQuery(phone) : null;
     
@@ -288,13 +297,18 @@ class UserController {
         } catch (error) {
             const statusCode = error.statusCode || 500;
             apiResponseMsg = error.message || 'Login failed';
-        
-            await userModel.insertinLog({
-                ...baseLog,
-                result: 0,
-                api_response: apiResponseMsg
-            });
-        
+
+            // A failure to write the login log must never stop the response being sent.
+            try {
+                await userModel.insertinLog({
+                    ...baseLog,
+                    result: 0,
+                    api_response: apiResponseMsg
+                });
+            } catch (logError) {
+                logger.error(`Login log write failed: ${logError.message}`);
+            }
+
             if (statusCode === 500) {
                 logger.error(`Login error: ${error.message}`, { stack: error.stack });
             }
@@ -459,17 +473,17 @@ class UserController {
 
     async forgotPassword(req, res) {
         try {
-            const { email, newPass, conPass } = req.body;
+            const { token, newPass, conPass } = req.body;
 
-            if (!email || !newPass || !conPass) {
-                return res.status(400).json({ msg: 'Email and passwords are required.' });
+            if (!token || !newPass || !conPass) {
+                return res.status(400).json({ msg: 'Reset token and passwords are required.' });
             }
-      
+
             if (newPass !== conPass) {
               return res.status(400).json({ msg: 'Passwords do not match.' });
             }
-      
-            const updateResult = await userService.forgotUserPassword(newPass, email);
+
+            const updateResult = await userService.forgotUserPassword(newPass, token);
 
             if (updateResult.success) {
                 return res.status(200).json({ msg: 'Password updated successfully.' });

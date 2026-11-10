@@ -101,6 +101,14 @@ class UserModel {
         return result;
     }
 
+    static async findUserById(userId) {
+        const [result] = await db.promise().query(
+            `SELECT * FROM tbl_registration WHERE id = ?`,
+            [userId]
+        );
+        return result;
+    }
+
     static async getUserByIdAndEmail(userId, email) {
         try {
             const query = `SELECT * FROM tbl_registration WHERE id = ? AND email = ?`;
@@ -280,8 +288,10 @@ class UserModel {
     }
 
     static getLoginQuery(phone) {
-        const query = `SELECT * FROM tbl_registration WHERE phone = '${phone}'`;
-        return query;
+        return {
+            sql: 'SELECT * FROM tbl_registration WHERE phone = ?',
+            params: [String(phone)]
+        };
     }
 
     // static async updateSessionToken(userId, accessToken, refreshToken) {

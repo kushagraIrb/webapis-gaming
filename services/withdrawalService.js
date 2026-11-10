@@ -8,6 +8,13 @@ const sendMail = require('../helpers/sendMail');
 const PROCESSING_MESSAGE = 'Your withdrawal request is being processed by our team and can no longer be cancelled.';
 
 class WithdrawalService {
+    // The wallet balance is always read from the ledger, never taken from the client.
+    static async getRealWalletBalance(userId) {
+        const maxTransId = await liveBetModel.getMaxTransactionId(userId);
+        if (!maxTransId) return 0;
+        return parseFloat(await liveBetModel.getWalletAmountByTransactionId(maxTransId)) || 0;
+    }
+
     // Get last withdrawal Date for a user
     static async getLastWithdrawalDateById(userId) {
         try {
@@ -22,7 +29,12 @@ class WithdrawalService {
     // Service to save withdrawal request
     static async handleWithdrawal(data) {
         try {
-            const { userId, withdrawalAmount, walletAmount, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm } = data;
+            const { userId, withdrawalAmount, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm } = data;
+
+            if (!Number.isFinite(withdrawalAmount) || withdrawalAmount <= 0) {
+                return { status: false, message: "Invalid withdrawal amount." };
+            }
+            const walletAmount = await WithdrawalService.getRealWalletBalance(userId);
 
             // 1. Check if current time is allowed
             const timeCheck = await withdrawalModel.getWithdrawalTime();
@@ -241,7 +253,12 @@ class WithdrawalService {
     // Service to save fast withdrawal request
     static async handleFastWithdrawal(data) {
         try {
-            const { userId, withdrawalAmount, walletAmount, chargePercent, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm } = data;
+            const { userId, withdrawalAmount, chargePercent, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm } = data;
+
+            if (!Number.isFinite(withdrawalAmount) || withdrawalAmount <= 0) {
+                return { status: false, message: "Invalid withdrawal amount." };
+            }
+            const walletAmount = await WithdrawalService.getRealWalletBalance(userId);
 
             const twentyFourHoursAgo = new Date();
             twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
