@@ -7,6 +7,7 @@ const bcrypt = require('bcrypt');
 const randomstring = require('randomstring');
 
 const jwt = require('jsonwebtoken');
+const { logger } = require('../logger');
 const { JWT_SECRET, BASE_URL } = process.env;
 
 const requestIp = require('request-ip');
@@ -363,7 +364,13 @@ class UserService {
         await userModel.updateUser(LastUserID, arrData);
 
         if (referralDetails.isRefer) {
-            await this.handleReferralBonuses(LastUserID, referralDetails);
+            // The account already exists at this point, so a problem recording the referral
+            // must not turn a successful signup into an error (a retry would say "already exists").
+            try {
+                await this.handleReferralBonuses(LastUserID, referralDetails);
+            } catch (referralError) {
+                logger.error(`Referral bonus not recorded for new user ${LastUserID}: ${referralError.message}`, { stack: referralError.stack });
+            }
         }
 
         // Generate the JWT access token (valid for 15 minutes)
@@ -415,10 +422,11 @@ class UserService {
                 UidR = referUid ? referUid.id : '0';
                 userRefcode = userData.refer_to;
 
-                if (referUid) {
-                    const totalBonus = await CalculateBonusByUID(referUid.id);
-                    calculateTotBonus = refBonus.bonus_amount + totalBonus;
-                    referralAmount = refBonus.bonus_amount;
+                const configuredAmount = Number(refBonus && refBonus.bonus_amount) || 0;
+                if (referUid && configuredAmount > 0) {
+                    const totalBonus = Number(await userModel.CalculateBonusByUID(referUid.id)) || 0;
+                    calculateTotBonus = configuredAmount + totalBonus;
+                    referralAmount = configuredAmount;
                 }
             }
         }
@@ -437,18 +445,23 @@ class UserService {
     static async handleReferralBonuses(LastUserID, details) {
         const { referralAmount, UidR, calculateTotBonus, adminRefcode, bonusStatus, isType } = details;
 
+        // Nothing is configured to be paid for this code (or the code is unknown): nothing to record.
+        if (!(Number(referralAmount) > 0)) {
+            return;
+        }
+
         if (isType) {
             // Admin Referral
-            const referralId = await this.insertReferralHistory(referralAmount, LastUserID, LastUserID, adminRefcode);
-            await this.insertBonusHistory(referralId, LastUserID, referralAmount, calculateTotBonus, 'Credit', bonusStatus, adminRefcode);
+            const referralId = await userModel.insertReferralHistory(referralAmount, LastUserID, LastUserID, adminRefcode);
+            await userModel.insertBonusHistory(referralId, LastUserID, referralAmount, calculateTotBonus, 'Credit', bonusStatus, adminRefcode);
         } else {
             // User Referral
-            const referralId = await this.insertReferralHistory(referralAmount, LastUserID, UidR, adminRefcode);
-            await this.insertBonusHistory(referralId, UidR, referralAmount, calculateTotBonus, 'Credit', bonusStatus, adminRefcode);
+            const referralId = await userModel.insertReferralHistory(referralAmount, LastUserID, UidR, adminRefcode);
+            await userModel.insertBonusHistory(referralId, UidR, referralAmount, calculateTotBonus, 'Credit', bonusStatus, adminRefcode);
 
             // Self Referral
-            const selfReferralId = await this.insertReferralHistory(referralAmount, LastUserID, LastUserID, adminRefcode);
-            await this.insertBonusHistory(selfReferralId, LastUserID, referralAmount, referralAmount, 'Credit', bonusStatus, adminRefcode);
+            const selfReferralId = await userModel.insertReferralHistory(referralAmount, LastUserID, LastUserID, adminRefcode);
+            await userModel.insertBonusHistory(selfReferralId, LastUserID, referralAmount, referralAmount, 'Credit', bonusStatus, adminRefcode);
         }
     }
 
@@ -754,18 +767,10 @@ class UserService {
         }
     }
 
-    static async logoutUser(refreshToken) {
+    static async logoutUser(userId) {
         try {
-            // Find and clear the refresh token from the database
-            const user = await userModel.findUserByRefreshToken(refreshToken);
-
-            if (!user) {
-                const err = new Error('Invalid user. Please try again!');
-                err.statusCode = 401;
-                throw err;
-            }
-
-            await userModel.clearRefreshToken(user.id);
+            // Ends the session: both the refresh token and the session token are cleared.
+            await userModel.clearRefreshToken(userId);
         } catch (error) {
             throw new Error('Error while logging out.');
         }

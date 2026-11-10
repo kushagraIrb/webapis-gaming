@@ -29,28 +29,54 @@ class AccountHistoryModel {
 
     // Update Primary Account
     static async changePrimaryAccount(userId, accountId) {
+        const fail = (message, statusCode) => {
+            const err = new Error(message);
+            err.statusCode = statusCode;
+            return err;
+        };
+
+        const connection = await db.promise().getConnection();
         try {
+            await connection.beginTransaction();
 
-            // Step 1: Check if there's any pending request (status = '0')
-            const pendingQuery = `SELECT COUNT(*) AS pendingCount FROM tbl_withdrawal WHERE user_id = ? AND status = '0'`;
-
-            const [pendingResult] = await db.promise().query(pendingQuery, [userId]);
-            console.log('Pending Result:', pendingResult);
-            console.log(pendingResult[0].pendingCount);
-
-            if (pendingResult[0].pendingCount > 0) {
-                // Pending request found — stop and return message
-                throw new Error('Failed to update primary account');
+            // The account must be one of the caller's own, still-active accounts.
+            const [own] = await connection.query(
+                `SELECT ac_id FROM tbl_user_account
+                 WHERE user_id = ? AND ac_id = ? AND (is_soft_deleted = 0 OR is_soft_deleted IS NULL)
+                 FOR UPDATE`,
+                [userId, accountId]
+            );
+            if (!own.length) {
+                throw fail('Account not found.', 404);
             }
 
-            const updateOldAccount = `UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ? AND primary_account = 1`;
-            await db.promise().query(updateOldAccount, [userId]);
+            const [pending] = await connection.query(
+                `SELECT COUNT(*) AS pendingCount FROM tbl_withdrawal WHERE user_id = ? AND status = '0'`,
+                [userId]
+            );
+            if (pending[0].pendingCount > 0) {
+                throw fail('You cannot change your primary account while a withdrawal request is pending.', 400);
+            }
 
-            const query = `UPDATE tbl_user_account SET primary_account = 1 WHERE user_id = ? AND ac_id = ?`;
-            await db.promise().query(query, [userId, accountId]);
+            await connection.query(
+                `UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ? AND primary_account = 1`,
+                [userId]
+            );
+            const [set] = await connection.query(
+                `UPDATE tbl_user_account SET primary_account = 1 WHERE user_id = ? AND ac_id = ?`,
+                [userId, accountId]
+            );
+            if (set.affectedRows !== 1) {
+                throw fail('Failed to update primary account', 500);
+            }
+
+            await connection.commit();
         } catch (error) {
+            try { await connection.rollback(); } catch (_) { /* connection already gone */ }
             console.error(`Error updating primary account:`, error.message);
-            throw new Error('Failed to update primary account');
+            throw error.statusCode ? error : new Error('Failed to update primary account');
+        } finally {
+            connection.release();
         }
     }
 

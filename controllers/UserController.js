@@ -525,15 +525,12 @@ class UserController {
 
     async logout(req, res) {
         try {
-            const refreshToken = req.body.refreshToken || req.cookies.refreshToken;
-    
-            // Check if a refresh token is provided
-            if (!refreshToken) {
-                return res.status(400).json({ message: 'Refresh token is required to log out.' });
+            // The logged-in user (from the verified access token) is the one logged out.
+            if (!req.user_id) {
+                return res.status(401).json({ message: 'Unauthorized. Please log in.' });
             }
-    
-            // Remove the refresh token from the database
-            await userService.logoutUser(refreshToken);
+
+            await userService.logoutUser(req.user_id);
     
             // Clear the refresh token from cookies
             res.clearCookie('refreshToken', {
