@@ -12,7 +12,6 @@ router.use(express.json());
 router.post('/send-otp', otpValidation, userController.sendOtp);
 
 router.post('/check-name', userController.checkNameAvailability);
-router.put('/update-name', userController.updateUserName);
 
 router.get('/fetch-state', userController.fetchUserState);
 router.post('/register', signUpValidation, userController.register);
@@ -26,6 +25,7 @@ router.post('/regenerate-access-token', userController.regenerateAccessToken);
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
 
+router.put('/update-name', userController.updateUserName);
 router.post('/details', userController.fetchUserDetailsByJwtToken);
 router.post('/change-password', changePwdValidation, userController.changePassword);
 // router.post('/dashboard', userController.userDashboard);

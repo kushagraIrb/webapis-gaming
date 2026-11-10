@@ -10,10 +10,10 @@ router.use(express.json());
 
 router.get('/', notificationController.notificationList);
 
-router.post('/gaming-notif-img', gamingNotificationUpload.single('notification_image'), notificationController.gamingNotifImg);
-
 // Apply authenticateToken middleware to all routes below this line
 router.use(authenticateToken);
+
+router.post('/gaming-notif-img', gamingNotificationUpload.single('notification_image'), notificationController.gamingNotifImg);
 
 router.get('/user-count', notificationController.notificationUserCount);
 router.get('/update-status', notificationController.updateNotificationStatus);

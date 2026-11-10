@@ -323,7 +323,7 @@ class MatchIdController {
             }
     
             // const result = await matchIdService.cancelTransferRequest(transfer_id);
-            const result = await matchIdService.cancelTransferRequest(transfer_id,rejection_reason);
+            const result = await matchIdService.cancelTransferRequest(transfer_id, rejection_reason, req.user_id);
 
     
             if (result.state === 'already_rejected') {

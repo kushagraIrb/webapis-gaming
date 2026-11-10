@@ -3,9 +3,9 @@ const moment = require('moment-timezone');
 
 class TicketService {
     // Delete Old Ticket
-    static async closeTicketById(ticketId) {
+    static async closeTicketById(ticketId, userId) {
         try {
-            const ticket = await ticketModel.getTicketById(ticketId);
+            const ticket = await ticketModel.getTicketById(ticketId, userId);
 
             if (!ticket || !ticket.token_no) {
                 const err = new Error('Ticket not found or missing token number.');
@@ -67,6 +67,11 @@ class TicketService {
 
     static async saveTicketReply(ticketData) {
         try {
+            if (!ticketData.token_no || !(await ticketModel.userOwnsTicket(ticketData.token_no, ticketData.userBy))) {
+                const err = new Error('Ticket not found.');
+                err.statusCode = 404;
+                throw err;
+            }
             await ticketModel.insertTicketReply(ticketData);
     
             return { status: true };

@@ -584,51 +584,14 @@ class LiveBetController {
                 });
             }
 
-            // Step 5: Fetch Wallet and bet amount
-            const walletAmount = parseFloat(await liveBetService.calculateWalletAmount(userId)) || 0;
-            const betAmount = parseFloat(await liveBetService.getBetAmount(userId, bet_id, match_id));
-            let totalWalletAmount = walletAmount + betAmount;
-
-            // Step 6: Cancel Charge after 5 Times Cancellation
-            const countCancelBet = await liveBetService.getNumberOfCancelBet(userId, match_id);
-            let chargesAmt = parseFloat(await liveBetService.CalculateBetCancelCharge(betAmount)) || 0;
-
-            let creditWLAmount;
-            if (countCancelBet > 5) {
-                creditWLAmount = betAmount - chargesAmt;
-            } else {
-                creditWLAmount = betAmount;
-                chargesAmt = 0;
-            }
-
-            // Final Wallet Calculation
-            totalWalletAmount = walletAmount + creditWLAmount;
-
-            // Step 7: Wallet Refund
-            const refundData = {
-                bet_id: bet_id,
-                match_id: match_id,
-                user_id: userId,
-                credit_amount: betAmount,
-                total_amount: totalWalletAmount,
-                cancel_charge: 0, // If there is a cancellation charge, apply it here
-                type: 'Credit',
-                t_status: 'Cancel'
-            };
-
-
-            // Step 8: Cancel the Bet After Refund
-            const cancelBetStatus = await liveBetService.cancelBet(bet_id);
-
-            if (!cancelBetStatus) {
-                return res.status(500).json({ message: 'Failed to cancel bet!' });
-            }
-
-            // Insert refund transaction into database
-            const walletRefund = await liveBetService.refundWallet(refundData);
-
-            if (!walletRefund) {
-                return res.status(500).json({ message: 'Failed to refund wallet amount' });
+            // Steps 5-8: owner check, one-time cancel, wallet and bonus refund (see LiveBetService.cancelBetAtomic)
+            try {
+                await liveBetService.cancelBetAtomic({ user_id: userId, bet_id, match_id });
+            } catch (cancelError) {
+                if (cancelError.userMessage) {
+                    return res.status(cancelError.statusCode || 401).json({ message: cancelError.userMessage });
+                }
+                throw cancelError;
             }
 
             // Step 9: Return the status

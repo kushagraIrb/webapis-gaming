@@ -854,6 +854,78 @@ class LiveBetService {
   }
     
     /*
+    | Cancels a live bet for its owner and refunds the wallet amount the bet recorded.
+    |
+    | Same approach as placement: serialized per user on the InnoDB user row; the bet is looked
+    | up for the caller only; it is flipped with `status = 1` in the WHERE so it can only be
+    | cancelled once; the wallet portion recorded on the bet is refunded; a failure after the flip is undone by hand because the
+    | money tables are MyISAM. Rejections carry `userMessage` + `statusCode`.
+    */
+    static async cancelBetAtomic({ user_id, bet_id, match_id }) {
+        const fail = (userMessage, statusCode) => {
+            const err = new Error(userMessage);
+            err.userMessage = userMessage;
+            err.statusCode = statusCode;
+            return err;
+        };
+
+        const connection = await db.promise().getConnection();
+        let flipped = false;
+
+        try {
+            await connection.beginTransaction();
+
+            const user = await liveBetModel.lockUserForBetting(connection, user_id);
+            if (!user) throw fail('Invalid user.', 401);
+
+            const bet = await liveBetModel.getBetForCancel(connection, bet_id, user_id, match_id);
+            if (!bet) throw fail('Bet not found.', 404);
+            if (Number(bet.status) !== 1) throw fail('This bet has already been cancelled!', 401);
+
+            const walletPortion = Math.max(Number(bet.wallet_amount) || 0, 0);
+
+            // Cancel charge after 5 bets on the match, taken from the wallet portion only.
+            let charge = 0;
+            if (walletPortion > 0 && (await liveBetModel.fetchNumberOfCancelBet(user_id, match_id)) > 5) {
+                charge = parseFloat(await liveBetModel.CalculateBetCancelCharge(walletPortion)) || 0;
+            }
+
+            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+            if ((await liveBetModel.markBetCancelled(connection, bet_id, user_id, istTime)) !== 1) {
+                throw fail('This bet has already been cancelled!', 401);
+            }
+            flipped = true;
+
+            if (walletPortion > 0) {
+                const wallet = await liveBetModel.getWalletRowForUpdate(connection, user_id);
+                const credit = walletPortion - charge;
+                await liveBetModel.insertCancelWalletRefund(connection, {
+                    bet_id,
+                    match_id,
+                    user_id,
+                    credit_amount: credit,
+                    total_amount: wallet.amount + credit,
+                    cancel_charge: charge,
+                    bonus_league_id: user.bonus_league_id,
+                    istTime
+                });
+            }
+
+            await connection.commit();
+            return { walletRefunded: walletPortion - charge };
+        } catch (error) {
+            try { await connection.rollback(); } catch (_) { /* connection already gone */ }
+            if (flipped) {
+                try { await liveBetModel.revertBetCancel(connection, bet_id, user_id, match_id); } catch (_) { /* best effort */ }
+            }
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }
+
+    /*
     | Places a live bet.
     |
     | Concurrent bets by the same user queue on a lock on their tbl_registration row (InnoDB),

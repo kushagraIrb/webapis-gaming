@@ -108,10 +108,12 @@ class UserController {
 
     async updateUserName(req, res) {
         try {
-            const { user_id, first_name, last_name } = req.body;
+            // The user is always the logged-in one: a user_id in the body is ignored.
+            const user_id = req.user_id;
+            const { first_name, last_name } = req.body;
 
             if (!user_id || !first_name) {
-                return res.status(400).json({ msg: 'user_id and first_name are required.' });
+                return res.status(400).json({ msg: 'first_name is required.' });
             }
 
             const updated = await userService.updateUserName(user_id, first_name, last_name || '');

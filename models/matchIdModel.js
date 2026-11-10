@@ -292,21 +292,21 @@ class MatchIdModel {
         return result[0].total;
     }
     
-    static async cancelTransferRequest(transfer_id) {
+    static async cancelTransferRequest(transfer_id, userId) {
         const connection = await db.promise().getConnection();
         try {
             await connection.beginTransaction();
     
             const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
     
-            /* ===== FETCH TRANSFER WITH LOCK ===== */
+            /* ===== FETCH TRANSFER WITH LOCK (only the caller's own request) ===== */
             const [rows] = await connection.query(
                 `SELECT id, match_id_req_id, status, in_process 
                  FROM tbl_transfer_requests 
-                 WHERE id = ? 
+                 WHERE id = ? AND user_id = ? 
                  LIMIT 1 
                  FOR UPDATE`,
-                [transfer_id]
+                [transfer_id, userId]
             );
     
             if (!rows.length) {
