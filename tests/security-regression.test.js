@@ -353,6 +353,153 @@ test('F-019: two simultaneous live bets on different matches cannot together exc
   }
 });
 
+// A future-dated copy of an existing live match, so live bets are accepted in tests.
+async function cloneFutureMatch() {
+  const [src] = await db.query('SELECT * FROM tbl_upcoming_match ORDER BY id DESC LIMIT 1');
+  const row = { ...src[0] };
+  delete row.id;
+  row.match_date = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  row.match_time = JSON.stringify(['10:00', '12:00']);
+  if ('cancel' in row) row.cancel = 1;
+  const cols = Object.keys(row);
+  const [ins] = await db.query(
+    `INSERT INTO tbl_upcoming_match (${cols.map(c => '`' + c + '`').join(',')}) VALUES (${cols.map(() => '?').join(',')})`,
+    cols.map(c => row[c])
+  );
+  return ins.insertId;
+}
+const authJson = (token) => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` });
+const liveBalance = async (userId) => {
+  const [r] = await db.query('SELECT total_amount a FROM tbl_transaction_history WHERE user_id=? ORDER BY trans_id DESC LIMIT 1', [userId]);
+  return Number(r[0]?.a ?? 0);
+};
+const liveBonus = async (userId) => {
+  const [r] = await db.query('SELECT total_bonus a FROM tbl_bonus_history WHERE user_id=? ORDER BY bonus_id DESC LIMIT 1', [userId]);
+  return Number(r[0]?.a ?? 0);
+};
+async function dropLiveRows(userIds, matchIds) {
+  for (const u of userIds) {
+    for (const t of ['tbl_bet', 'tbl_report', 'tbl_bonus_history']) await db.query(`DELETE FROM ${t} WHERE user_id=?`, [u]).catch(() => {});
+  }
+  for (const m of matchIds) await db.query('DELETE FROM tbl_upcoming_match WHERE id=?', [m]);
+}
+
+// ── F-020: only the owner can cancel a live bet, and only once ──
+test("F-020: another user cannot cancel a live bet; the owner is refunded exactly once", async () => {
+  const owner = await makeTestUser('f020o');
+  const other = await makeTestUser('f020x');
+  for (const u of [owner, other]) {
+    await db.query(`INSERT INTO tbl_transaction_history (user_id, credit_amount, total_amount, type, t_status, transaction_date) VALUES (?, 100, 100, 'Credit', 'Deposit', ?)`, [u.userId, nowSql()]);
+  }
+  const matchId = await cloneFutureMatch();
+  try {
+    const place = await fetch(`${API_BASE_URL}/api/live-bet/save`, {
+      method: 'POST', headers: authJson(owner.token),
+      body: JSON.stringify({ match_id: matchId, minimum_betamount: 10, team_value: 1, toss_id: 1, bet_amount: 40 }),
+    });
+    assert.strictEqual(place.status, 200, 'the owner must be able to place the bet');
+    const [bet] = await db.query('SELECT bet_id FROM tbl_bet WHERE user_id=? AND match_id=?', [owner.userId, matchId]);
+    const cancel = (u) => fetch(`${API_BASE_URL}/api/live-bet/cancel`, {
+      method: 'POST', headers: authJson(u.token), body: JSON.stringify({ bet_id: bet[0].bet_id, match_id: matchId }),
+    });
+
+    const stranger = await cancel(other);
+    assert.notStrictEqual(stranger.status, 200, "a different user must not be able to cancel someone else's bet");
+    const [still] = await db.query('SELECT status FROM tbl_bet WHERE bet_id=?', [bet[0].bet_id]);
+    assert.strictEqual(Number(still[0].status), 1, "the owner's bet must still be active");
+    assert.strictEqual(await liveBalance(owner.userId), 60, "the owner's balance must be untouched by the attempt");
+
+    assert.strictEqual((await cancel(owner)).status, 200, 'the owner must be able to cancel their own bet');
+    assert.strictEqual(await liveBalance(owner.userId), 100, 'the owner must get the full stake back');
+    const again = await cancel(owner);
+    assert.notStrictEqual(again.status, 200, 'a second cancel must be refused');
+    assert.strictEqual(await liveBalance(owner.userId), 100, 'a second cancel must not refund again');
+  } finally {
+    await dropLiveRows([owner.userId, other.userId], [matchId]);
+    await owner.cleanup();
+    await other.cleanup();
+  }
+});
+
+// ── F-023: only the ticket owner can reply inside a ticket ──
+test("F-023: a user cannot post a reply into another user's ticket", async () => {
+  const owner = await makeTestUser('f023o');
+  const other = await makeTestUser('f023x');
+  const token_no = 'REGTEST-F023';
+  await db.query(
+    `INSERT INTO tbl_support_ticket (token_no, issues, remarks, status, userBy, modified) VALUES (?, 1, 'throwaway', 'Open', ?, NOW())`,
+    [token_no, owner.userId]
+  );
+  const reply = (u, text) => {
+    const fd = new FormData();
+    fd.append('token_no', token_no); fd.append('issues_id', '1'); fd.append('status', 'Open'); fd.append('editor', text);
+    return fetch(`${API_BASE_URL}/api/ticket/reply`, { method: 'POST', headers: { Authorization: `Bearer ${u.token}` }, body: fd });
+  };
+  try {
+    const stranger = await reply(other, 'reply from a different user');
+    assert.notStrictEqual(stranger.status, 201, "a different user must not be able to reply into someone else's ticket");
+    const [rows] = await db.query('SELECT userBy FROM tbl_support_ticket WHERE token_no=? AND userBy=?', [token_no, other.userId]);
+    assert.strictEqual(rows.length, 0, 'no row from the other user may exist in the thread');
+    assert.strictEqual((await reply(owner, 'reply from the owner')).status, 201, 'the owner must still be able to reply');
+  } finally {
+    await db.query('DELETE FROM tbl_support_ticket WHERE token_no=?', [token_no]);
+    await owner.cleanup();
+    await other.cleanup();
+  }
+});
+
+// ── F-025: the upload folder must not come from the request ──
+test('F-025: a subFolder that climbs out of uploads/ does not create or write outside it', async () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { userId, token, cleanup } = await makeTestUser('f025');
+  const token_no = 'REGTEST-F025';
+  await db.query(
+    `INSERT INTO tbl_support_ticket (token_no, issues, remarks, status, userBy, modified) VALUES (?, 1, 'throwaway', 'Open', ?, NOW())`,
+    [token_no, userId]
+  );
+  const outside = path.join(__dirname, '..', 'audit_traversal_regtest');
+  try {
+    const fd = new FormData();
+    fd.append('subFolder', '../audit_traversal_regtest');
+    fd.append('token_no', token_no); fd.append('issues_id', '1'); fd.append('status', 'Open'); fd.append('editor', 'traversal check');
+    fd.append('attachment', new Blob([Buffer.from('89504e470d0a1a0a', 'hex')], { type: 'image/png' }), 'probe.html.png');
+    await fetch(`${API_BASE_URL}/api/ticket/reply`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+    assert.ok(!fs.existsSync(outside), 'no folder may be created outside the uploads directory');
+  } finally {
+    if (fs.existsSync(outside)) fs.rmSync(outside, { recursive: true, force: true });
+    const [att] = await db.query('SELECT attachment FROM tbl_support_ticket WHERE token_no=? AND attachment IS NOT NULL', [token_no]);
+    for (const a of att) fs.rmSync(path.join(__dirname, '..', 'uploads', 'common', a.attachment), { force: true });
+    await db.query('DELETE FROM tbl_support_ticket WHERE token_no=?', [token_no]);
+    await cleanup();
+  }
+});
+
+// ── F-002: the notification image upload needs a login and accepts images only ──
+test('F-002: POST /api/notifications/gaming-notif-img needs a login and rejects non-images', async () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { token, cleanup } = await makeTestUser('f002');
+  const upload = (headers, blob, name) => {
+    const fd = new FormData();
+    fd.append('notification_image', blob, name);
+    return fetch(`${API_BASE_URL}/api/notifications/gaming-notif-img`, { method: 'POST', headers, body: fd });
+  };
+  const html = new Blob(['<script>1</script>'], { type: 'text/html' });
+  const png = new Blob([Buffer.from('89504e470d0a1a0a', 'hex')], { type: 'image/png' });
+  let savedFile = null;
+  try {
+    assert.notStrictEqual((await upload({}, png, 'a.png')).status, 200, 'an upload with no login must be refused');
+    assert.notStrictEqual((await upload({ Authorization: `Bearer ${token}` }, html, 'a.html')).status, 200, 'a non-image must be refused');
+    const ok = await upload({ Authorization: `Bearer ${token}` }, png, 'a.png');
+    assert.strictEqual(ok.status, 200, 'a logged-in image upload must still work');
+    savedFile = (await ok.json()).filePath.split('/').pop();
+  } finally {
+    if (savedFile) fs.rmSync(path.join(__dirname, '..', 'uploads', 'notification', savedFile), { force: true });
+    await cleanup();
+  }
+});
+
 // ── F-018: a user must not be able to bet more than their real balance via concurrent bets ──
 test('F-018: two simultaneous coin-flip bets on one match cannot together exceed the real balance', async () => {
   const { userId, token, cleanup } = await makeTestUser('f018');

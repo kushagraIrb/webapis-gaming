@@ -18,11 +18,12 @@ async function hasClosedByColumn() {
 
 class TicketModel {
     // Delete Ticket
-    static async getTicketById(ticketId) {
-        const query = `SELECT * FROM tbl_support_ticket WHERE id = ? LIMIT 1`;
+    // Scoped to the owner: a ticket that belongs to someone else is "not found".
+    static async getTicketById(ticketId, userId) {
+        const query = `SELECT * FROM tbl_support_ticket WHERE id = ? AND userBy = ? LIMIT 1`;
 
         try {
-            const [rows] = await db.promise().query(query, [ticketId]);
+            const [rows] = await db.promise().query(query, [ticketId, userId]);
             return rows.length ? rows[0] : null;
         } catch (error) {
             console.error('Error fetching ticket by ID:', error.message);
@@ -189,6 +190,14 @@ class TicketModel {
     //     const [rows] = await db.promise().query(query, [userId]);
     //     return rows;
     // }
+
+    static async userOwnsTicket(tokenNo, userId) {
+        const [rows] = await db.promise().query(
+            `SELECT id FROM tbl_support_ticket WHERE token_no = ? AND userBy = ? LIMIT 1`,
+            [tokenNo, userId]
+        );
+        return rows.length > 0;
+    }
 
     static async insertTicketReply(ticketData) {
         const indiaTime = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');

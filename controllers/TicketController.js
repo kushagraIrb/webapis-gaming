@@ -11,7 +11,7 @@ class TicketController {
                 return res.status(400).json({ status: false, message: 'Ticket ID is required!' });
             }
 
-            const result = await ticketService.closeTicketById(ticket_id);
+            const result = await ticketService.closeTicketById(ticket_id, req.user_id);
 
             return res.status(200).json({
                 status: true,
@@ -153,6 +153,9 @@ class TicketController {
             }
         } catch (error) {
             console.error('Error saving reply:', error.message);
+            if (error.statusCode === 404) {
+                return res.status(404).json({ status: false, message: 'Ticket not found.' });
+            }
             logger.error(`Error saving ticket reply: ${error.message}`, { stack: error.stack });
             
             return res.status(500).json({ status: false, message: 'Something went wrong, please try again.' });

@@ -230,10 +230,11 @@ class MatchIdService {
     //     }
     // }
 
-    static async cancelTransferRequest(transfer_id,rejection_reason) {
+    static async cancelTransferRequest(transfer_id, rejection_reason, userId) {
         try {
-            return await matchIdModel.cancelTransferRequest(transfer_id,rejection_reason );
+            return await matchIdModel.cancelTransferRequest(transfer_id, userId);
         } catch (error) {
+            if (error.message === 'TRANSFER_NOT_FOUND') throw error;
             console.error('Error in Support Message Service:', error.message);
             throw new Error('Failed to send support message');
         }

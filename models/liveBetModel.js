@@ -732,10 +732,52 @@ class LiveBetModel {
     // concurrent bet by the same user (the MyISAM money tables ignore FOR UPDATE).
     static async lockUserForBetting(connection, userId) {
         const [rows] = await connection.query(
-            `SELECT id FROM tbl_registration WHERE id = ? FOR UPDATE`,
+            `SELECT id, bonus_league_id FROM tbl_registration WHERE id = ? FOR UPDATE`,
             [userId]
         );
         return rows[0] || null;
+    }
+
+    // Cancelling a bet: the bet is looked up for its owner only, and its own recorded
+    // wallet portion drives the refund.
+    static async getBetForCancel(connection, betId, userId, matchId) {
+        const [rows] = await connection.query(
+            `SELECT bet_id, status, amount, wallet_amount, bonus_amount
+             FROM tbl_bet WHERE bet_id = ? AND user_id = ? AND match_id = ? FOR UPDATE`,
+            [betId, userId, matchId]
+        );
+        return rows[0] || null;
+    }
+
+    // Only flips a bet that is still active, so two cancels can never both succeed.
+    static async markBetCancelled(connection, betId, userId, istTime) {
+        const [result] = await connection.query(
+            `UPDATE tbl_bet SET status = '0', cancel_by = 'By User', cancel_date = ?
+             WHERE bet_id = ? AND user_id = ? AND status = 1`,
+            [istTime, betId, userId]
+        );
+        return result.affectedRows;
+    }
+
+    static async insertCancelWalletRefund(connection, data) {
+        await connection.query(
+            `INSERT INTO tbl_transaction_history
+             (bet_id, match_id, user_id, credit_amount, total_amount, cancel_charge, type, t_status, transaction_date, current_bonus_league_id)
+             VALUES (?, ?, ?, ?, ?, ?, 'Credit', 'Cancel', ?, ?)`,
+            [data.bet_id, data.match_id, data.user_id, data.credit_amount, data.total_amount, data.cancel_charge, data.istTime, data.bonus_league_id ?? null]
+        );
+    }
+
+    // The money tables cannot roll back, so a cancel that fails after the bet was flipped is undone by hand.
+    static async revertBetCancel(connection, betId, userId, matchId) {
+        await connection.query(
+            `DELETE FROM tbl_transaction_history WHERE bet_id = ? AND user_id = ? AND match_id = ? AND type = 'Credit' AND t_status = 'Cancel'`,
+            [betId, userId, matchId]
+        );
+        await connection.query(
+            `UPDATE tbl_bet SET status = 1, cancel_by = NULL, cancel_date = NULL WHERE bet_id = ? AND user_id = ?`,
+            [betId, userId]
+        );
     }
 
     static async getWalletRowForUpdate(connection, userId) {
