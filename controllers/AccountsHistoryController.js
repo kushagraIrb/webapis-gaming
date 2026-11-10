@@ -58,6 +58,10 @@ class AccountHistoryController {
             console.error('Error changing primary account:', error.message);
             logger.error(`Error changing primary account: ${error.message}`, { stack: error.stack });
 
+            if (error.statusCode && error.statusCode < 500) {
+                return res.status(error.statusCode).send({ status: false, message: error.message });
+            }
+
             return res.status(500).send({
                 status: false,
                 message: 'An error occurred while changing the primary account',

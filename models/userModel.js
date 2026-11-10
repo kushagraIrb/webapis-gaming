@@ -1,6 +1,21 @@
 const db = require('../config/database');
 const moment = require('moment');
 
+// OTP expiry and attempt limit need two columns (see sql/20261110-otp-expiry-and-attempts.sql).
+// They are used as soon as the columns exist, so the code can ship before or after the migration.
+const OTP_VALID_MINUTES = 5;
+const OTP_MAX_ATTEMPTS = 5;
+let otpGuardColumns = { exists: false, checkedAt: 0 };
+
+async function hasOtpGuardColumns() {
+    if (otpGuardColumns.exists || Date.now() - otpGuardColumns.checkedAt < 60000) {
+        return otpGuardColumns.exists;
+    }
+    const [rows] = await db.promise().query("SHOW COLUMNS FROM otp_verified WHERE Field IN ('created_at', 'attempts')");
+    otpGuardColumns = { exists: rows.length === 2, checkedAt: Date.now() };
+    return otpGuardColumns.exists;
+}
+
 class UserModel {
     // Fetch user details based on jwt token
     static async fetchUserDetailsByJwtToken(userId) {
@@ -139,14 +154,14 @@ class UserModel {
             `SELECT code,price,is_admin FROM tbl_coupon_code WHERE is_delete = ? AND status=? AND code = ?`,
             [1, 1, refer_to]
         );
-        return result;
+        return result[0] || null;
     }
 
     static async getReferalamount() {
         const [result] = await db.promise().query(
             'SELECT bonus_amount FROM tbl_referral_bonus WHERE status = 1'
         );
-        return result;
+        return result[0] || null;
     }
 
     static async findUserByReferralCode(refer_to) {
@@ -154,7 +169,7 @@ class UserModel {
             `SELECT id FROM tbl_registration WHERE referral_code = ?`,
             [refer_to]
         );
-        return result;
+        return result[0] || null;
     }
 
     static async CalculateBonusByUID(userId) {
@@ -165,10 +180,10 @@ class UserModel {
         );
 
         // Step 2: If a bonus_id is found, fetch the `total_bonus` for that `bonus_id`
-        if (result && result.bonus_id) {
+        if (result && result[0] && result[0].bonus_id) {
             const [bonusResult] = await db.promise().query(
                 `SELECT total_bonus FROM tbl_bonus_history WHERE bonus_id = ?`,
-                [result.bonus_id]
+                [result[0].bonus_id]
             );
 
             // Step 3: Return the total bonus or 0 if no bonus is found
@@ -223,11 +238,29 @@ class UserModel {
     }
 
     static async checkOtp(email, phone, otp) {
-        const query = `SELECT otp FROM otp_verified WHERE email = ? AND phone = ? ORDER BY id DESC LIMIT 1`;
+        const guarded = await hasOtpGuardColumns();
+        const query = guarded
+            ? `SELECT id, otp, attempts, TIMESTAMPDIFF(MINUTE, created_at, NOW()) AS age_minutes
+               FROM otp_verified WHERE email = ? AND phone = ? ORDER BY id DESC LIMIT 1`
+            : `SELECT id, otp FROM otp_verified WHERE email = ? AND phone = ? ORDER BY id DESC LIMIT 1`;
         const [result] = await db.promise().query(query, [email, phone]);
 
-        // Check if the OTP matches
-        if (result.length === 0 || result[0].otp !== String(otp)) {
+        if (result.length === 0) {
+            return false;
+        }
+        const row = result[0];
+
+        if (guarded) {
+            // Expired, or too many wrong guesses already: the code is dead whatever is typed.
+            if (row.age_minutes === null || row.age_minutes >= OTP_VALID_MINUTES || row.attempts >= OTP_MAX_ATTEMPTS) {
+                return false;
+            }
+        }
+
+        if (row.otp !== String(otp)) {
+            if (guarded) {
+                await db.promise().query('UPDATE otp_verified SET attempts = attempts + 1 WHERE id = ?', [row.id]);
+            }
             return false;
         }
         return true;
@@ -479,7 +512,8 @@ class UserModel {
     }
 
     static async clearRefreshToken(userId) {
-        const query = `UPDATE tbl_registration SET refresh_token = NULL WHERE id = ?`;
+        // session_token is what every request is checked against, so it must be cleared too.
+        const query = `UPDATE tbl_registration SET refresh_token = NULL, session_token = NULL WHERE id = ?`;
         await db.promise().query(query, [userId]);
     }
 }

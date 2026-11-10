@@ -500,6 +500,178 @@ test('F-002: POST /api/notifications/gaming-notif-img needs a login and rejects 
   }
 });
 
+// ── F-006: logging out must end the session ──
+test('F-006: the access token stops working after logout', async () => {
+  const { token, cleanup } = await makeTestUser('f006');
+  try {
+    const details = () => fetch(`${API_BASE_URL}/api/users/details`, { method: 'POST', headers: authJson(token), body: '{}' });
+    assert.strictEqual((await details()).status, 200, 'the token must work before logout');
+    const out = await fetch(`${API_BASE_URL}/api/users/logout`, { headers: authJson(token) });
+    assert.strictEqual(out.status, 200, 'logout must succeed');
+    assert.notStrictEqual((await details()).status, 200, 'the same access token must be refused after logout');
+  } finally {
+    await cleanup();
+  }
+});
+
+// ── F-007: an OTP expires and locks after wrong guesses ──
+test('F-007: an OTP expires after 5 minutes and locks after 5 wrong guesses', async () => {
+  const userModel = require('../models/userModel');
+  const [cols] = await db.query("SHOW COLUMNS FROM otp_verified WHERE Field IN ('created_at', 'attempts')");
+  assert.strictEqual(cols.length, 2, 'run sql/20261110-otp-expiry-and-attempts.sql on this database first');
+  const email = 'audit-regtest-f007@invalid.local';
+  const phone = '9000000007';
+  const addOtp = (otp, minutesAgo) => db.query(
+    'INSERT INTO otp_verified (email, phone, otp, otp_type, created_at) VALUES (?, ?, ?, 1, DATE_SUB(NOW(), INTERVAL ? MINUTE))',
+    [email, phone, otp, minutesAgo]
+  );
+  try {
+    await addOtp('1234', 0);
+    assert.strictEqual(await userModel.checkOtp(email, phone, '1234'), true, 'a fresh, correct code must be accepted');
+    assert.strictEqual(await userModel.checkOtp(email, phone, '9999'), false, 'a wrong code must be refused');
+
+    await addOtp('4321', 6);
+    assert.strictEqual(await userModel.checkOtp(email, phone, '4321'), false, 'a code older than 5 minutes must be refused even if correct');
+
+    await addOtp('5555', 0);
+    for (let i = 0; i < 5; i++) assert.strictEqual(await userModel.checkOtp(email, phone, '0000'), false);
+    assert.strictEqual(await userModel.checkOtp(email, phone, '5555'), false, 'after 5 wrong guesses even the correct code must be refused');
+
+    await addOtp('6666', 4);
+    assert.strictEqual(await userModel.checkOtp(email, phone, '6666'), true, 'a 4-minute-old code is still valid');
+  } finally {
+    await db.query('DELETE FROM otp_verified WHERE email=?', [email]);
+  }
+});
+
+// ── F-014: sensitive endpoints are rate limited ──
+test('F-014: login and OTP requests are rate limited per account', async () => {
+  assert.notStrictEqual(String(process.env.RATE_LIMIT_DISABLED).toLowerCase(), 'true', 'run this test without RATE_LIMIT_DISABLED');
+  const express = require('express');
+  const limits = require('../helpers/rateLimiters');
+  const app = express();
+  app.use(express.json());
+  app.post('/login', limits.loginPerAccount, (req, res) => res.json({ ok: true }));
+  app.post('/otp', limits.otpPerTarget, (req, res) => res.json({ ok: true }));
+  const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const hit = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.status);
+  try {
+    for (let i = 0; i < 10; i++) assert.strictEqual(await hit('/login', { phone: '9111111111' }), 200, `attempt ${i + 1} is within the limit`);
+    assert.strictEqual(await hit('/login', { phone: '9111111111' }), 429, 'the 11th attempt on one account must be refused');
+    assert.strictEqual(await hit('/login', { phone: '9222222222' }), 200, 'another account from the same IP is not blocked');
+    for (let i = 0; i < 5; i++) assert.strictEqual(await hit('/otp', { email: 'a@invalid.local' }), 200);
+    assert.strictEqual(await hit('/otp', { email: 'a@invalid.local' }), 429, 'the 6th OTP request for one email must be refused');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+// ── F-022: the minimum bet is the server's own setting ──
+test('F-022: a live bet below the server minimum is refused even if the client sends a lower minimum', async (t) => {
+  const [cfg] = await db.query("SELECT bet_amount FROM tbl_bet_amount WHERE status = '1' LIMIT 1");
+  const min = Number(cfg[0]?.bet_amount || 0);
+  if (!(min > 1)) return t.skip('no server minimum above 1 is configured');
+  const { userId, token, cleanup } = await makeTestUser('f022');
+  await db.query(`INSERT INTO tbl_transaction_history (user_id, credit_amount, total_amount, type, t_status, transaction_date) VALUES (?, 500, 500, 'Credit', 'Deposit', ?)`, [userId, nowSql()]);
+  const matchId = await cloneFutureMatch();
+  const bet = (amount, forgedMin) => fetch(`${API_BASE_URL}/api/live-bet/save`, {
+    method: 'POST', headers: authJson(token),
+    body: JSON.stringify({ match_id: matchId, minimum_betamount: forgedMin, team_value: 1, toss_id: 1, bet_amount: amount }),
+  }).then(r => r.status);
+  try {
+    assert.notStrictEqual(await bet(min - 1, 0), 200, 'a bet below the minimum must be refused with a forged minimum of 0');
+    assert.notStrictEqual(await bet(min - 1, -1000), 200, 'a bet below the minimum must be refused with a forged negative minimum');
+    assert.notStrictEqual(await bet(-5, -1000), 200, 'a negative bet must be refused');
+    const [none] = await db.query('SELECT COUNT(*) AS n FROM tbl_bet WHERE user_id=?', [userId]);
+    assert.strictEqual(none[0].n, 0, 'no bet row may exist after the refused bets');
+    assert.strictEqual(await bet(min, 0), 200, 'a bet at exactly the minimum must be accepted');
+  } finally {
+    await dropLiveRows([userId], [matchId]);
+    await cleanup();
+  }
+});
+
+// ── F-024: change-primary only works on the caller's own account ──
+test("F-024: change-primary with someone else's account id leaves the caller's primary account alone", async () => {
+  const me = await makeTestUser('f024me');
+  const other = await makeTestUser('f024ot');
+  const addAccount = async (uid, primary) => (await db.query(
+    `INSERT INTO tbl_user_account (user_id, bank_name, account_number, ifsc, ac_holder_name, account_type, upi_id, phone_pay, g_pay, paytm, primary_account, modified)
+     VALUES (?, 'Test Bank', '0000000000', 'TEST0000000', 'Test', 'savings', 'test@upi', '9000000000', '9000000000', '9000000000', ?, ?)`,
+    [uid, primary, nowSql()]
+  ))[0].insertId;
+  const mine1 = await addAccount(me.userId, 1);
+  const mine2 = await addAccount(me.userId, 0);
+  const theirs = await addAccount(other.userId, 0);
+  const change = (id) => fetch(`${API_BASE_URL}/api/account/change-primary`, { method: 'POST', headers: authJson(me.token), body: JSON.stringify({ account_id: id }) });
+  const primaryOf = async (uid) => (await db.query('SELECT ac_id FROM tbl_user_account WHERE user_id=? AND primary_account=1', [uid]))[0].map(r => r.ac_id);
+  try {
+    const bad = await change(theirs);
+    assert.notStrictEqual(bad.status, 200, "another user's account id must be refused");
+    assert.deepStrictEqual(await primaryOf(me.userId), [mine1], "the caller's own primary account must be untouched");
+    assert.deepStrictEqual(await primaryOf(other.userId), [], "the other user's accounts must be untouched");
+    assert.strictEqual((await change(mine2)).status, 200, "switching to the caller's own other account must work");
+    assert.deepStrictEqual(await primaryOf(me.userId), [mine2], 'exactly one primary account after the switch');
+  } finally {
+    await me.cleanup();
+    await other.cleanup();
+  }
+});
+
+// ── F-028: registering with a referral code must not crash after the account is created ──
+test('F-028: registration with a referral code succeeds and records the referral', async () => {
+  const userService = require('../services/userService');
+  const stamp = String(Date.now()).slice(-8);
+  const phones = [`7${stamp}0`, `7${stamp}1`, `7${stamp}2`];
+  const emails = ['audit-regtest-f028a@invalid.local', 'audit-regtest-f028b@invalid.local', 'audit-regtest-f028c@invalid.local'];
+  const referrer = await makeTestUser('f028ref');
+  await db.query('UPDATE tbl_registration SET referral_code=? WHERE id=?', ['GHREGTEST028', referrer.userId]);
+  const [bonusCfg] = await db.query('SELECT id, bonus_amount FROM tbl_referral_bonus WHERE status = 1 ORDER BY id LIMIT 1');
+  const originalAmount = bonusCfg[0].bonus_amount;
+  const [couponIns] = await db.query(
+    `INSERT INTO tbl_coupon_code (code, price, status, is_delete, addedby, is_admin, modified) VALUES ('REGTEST028', 40, 1, 1, 1, 1, NOW())`
+  );
+  const signUp = (i, referralCode) => userService.registerUser({
+    first_name: 'Audit', last_name: 'Referral', email: emails[i], password: 'Reg#Test123', phone: phones[i],
+    pincode: '110001', is_eighteen: 1, is_referral: 1, refer_to: referralCode,
+  }, '127.0.0.1');
+  const idOf = async (email) => (await db.query('SELECT id FROM tbl_registration WHERE email=?', [email]))[0][0]?.id;
+  try {
+    await db.query('UPDATE tbl_referral_bonus SET bonus_amount = 25 WHERE id = ?', [bonusCfg[0].id]);
+
+    await signUp(0, 'GHREGTEST028');
+    const userA = await idOf(emails[0]);
+    assert.ok(userA, 'the account must exist');
+    const [histA] = await db.query('SELECT COUNT(*) AS n FROM tbl_referral_history WHERE referal_uid=?', [userA]);
+    assert.ok(histA[0].n >= 1, 'a user-referral must be recorded in tbl_referral_history');
+    const [bonusA] = await db.query('SELECT COUNT(*) AS n FROM tbl_bonus_history WHERE user_id IN (?, ?)', [userA, referrer.userId]);
+    assert.ok(bonusA[0].n >= 1, 'a referral bonus row must be written');
+
+    await signUp(1, 'REGTEST028');
+    const userB = await idOf(emails[1]);
+    assert.ok(userB, 'signup with an admin coupon code must succeed');
+    const [bonusB] = await db.query('SELECT credit_bonus FROM tbl_bonus_history WHERE user_id=? ORDER BY bonus_id DESC LIMIT 1', [userB]);
+    assert.strictEqual(Number(bonusB[0]?.credit_bonus), 40, 'the coupon value must be credited');
+
+    await signUp(2, 'NO-SUCH-CODE');
+    assert.ok(await idOf(emails[2]), 'signup with an unknown referral code must still succeed');
+  } finally {
+    await db.query('UPDATE tbl_referral_bonus SET bonus_amount = ? WHERE id = ?', [originalAmount, bonusCfg[0].id]);
+    await db.query('DELETE FROM tbl_coupon_code WHERE id=?', [couponIns.insertId]);
+    for (const email of emails) {
+      const id = await idOf(email);
+      if (!id) continue;
+      await db.query('DELETE FROM tbl_referral_history WHERE referal_uid=? OR referto_uid=?', [id, id]);
+      await db.query('DELETE FROM tbl_bonus_history WHERE user_id=?', [id]);
+      await db.query('DELETE FROM tbl_registration WHERE id=?', [id]);
+    }
+    await db.query('DELETE FROM tbl_referral_history WHERE referto_uid=?', [referrer.userId]);
+    await db.query('DELETE FROM tbl_bonus_history WHERE user_id=?', [referrer.userId]);
+    await referrer.cleanup();
+  }
+});
+
 // ── F-018: a user must not be able to bet more than their real balance via concurrent bets ──
 test('F-018: two simultaneous coin-flip bets on one match cannot together exceed the real balance', async () => {
   const { userId, token, cleanup } = await makeTestUser('f018');

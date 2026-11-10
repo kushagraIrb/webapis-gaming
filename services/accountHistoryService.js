@@ -20,6 +20,7 @@ class AccountHistoryModel {
         try {
             return await accountHistoryModel.changePrimaryAccount(userId, accountId);
         } catch (error) {
+            if (error.statusCode) throw error;
             console.error('Error in Account Service:', error.message);
             throw new Error('Failed to update primary account');
         }

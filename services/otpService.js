@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const sendMail = require('../helpers/sendMail');
 
 class OtpService {
@@ -6,7 +7,7 @@ class OtpService {
      * @returns {number} - A 4-digit OTP
      */
     static generateOtp() {
-        return Math.floor(1000 + Math.random() * 9000); // Generate 4-digit OTP
+        return crypto.randomInt(1000, 10000); // 4-digit OTP from a cryptographically secure source
     }
 
     /**

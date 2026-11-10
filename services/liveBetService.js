@@ -936,7 +936,7 @@ class LiveBetService {
     | after the first write is undone by hand.
     */
     static async placeBetWithTransaction(data) {
-        const { user_id, match_id, minimum_betamount, team_value, toss_id } = data;
+        const { user_id, match_id, team_value, toss_id } = data;
         const bet_amount = Number(data.bet_amount);
 
         if (!Number.isFinite(bet_amount) || bet_amount <= 0) {
@@ -971,7 +971,9 @@ class LiveBetService {
                 throw new Error('Insufficient balance');
             }
 
-            if (bet_amount < minimum_betamount) {
+            // The minimum is the server's own setting; whatever the client sent is ignored.
+            const serverMinimum = parseFloat(await liveBetModel.fetchMinBetAmount()) || 0;
+            if (bet_amount < serverMinimum) {
                 throw new Error('Below minimum bet amount');
             }
 
