@@ -6,6 +6,8 @@ const moment = require('moment-timezone'); // ✅ SAHI JAGAH: moment ko file ke 
 require("dotenv").config();
 const { RECEIVER_EMAIL } = process.env;
 
+// A user in the "Lose Until Balance 100 or Less" list stops being forced to lose once their balance is this or less.
+const LOSE_UNTIL_BALANCE_LIMIT = 100;
 // How far ahead of its time a match can be and still count as "the match we are waiting
 // for" (they last 30 seconds).
 const WAITING_MATCH_MAX_SECONDS = 60;
@@ -627,8 +629,11 @@ class CoinFlipService {
   |
   | lose_8_games:    unchanged from the original behavior -- deactivate
   |                   once newCount reaches 8.
-  | lose_until_zero: deactivate once the user's current wallet+bonus
-  |                   balance is 0 or below the current minimum bet.
+  | lose_until_zero: (shown in the admin panel as "Lose Until Balance 100 or
+  |                   Less"; the key is unchanged so no database change is
+  |                   needed) deactivate once the user's current wallet+bonus
+  |                   balance is LOSE_UNTIL_BALANCE_LIMIT (100) or less, or
+  |                   below the current minimum bet.
   |                   Bet placement already debits the stake at the time
   |                   the bet is placed (see CoinFlipController.saveCoinBet
   |                   step 9) and a forced LOSS credits nothing back --
@@ -644,7 +649,7 @@ class CoinFlipService {
       return;
     }
 
-    // lose_until_zero
+    // lose_until_zero: stops at a balance of 100 or less
     const [wallet, bonus, minBet] = await Promise.all([
       this.calculateWalletAmount(userId, connection),
       this.calculateBonus(userId, connection),
@@ -654,7 +659,7 @@ class CoinFlipService {
     const balance = parseFloat(wallet) + parseFloat(bonus);
     const minimumBet = parseFloat(minBet) || 0;
 
-    if (balance <= 0 || balance < minimumBet) {
+    if (balance <= LOSE_UNTIL_BALANCE_LIMIT || balance < minimumBet) {
       await coinFlipModel.softRemoveSelectedUser(userId, connection);
     }
   }
