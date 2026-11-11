@@ -27,12 +27,20 @@ class ContactUsService {
     static async sendEmail({ contact_name, contact_email, contact_phone, contact_message }) {
         try {
             const mailSubject = 'Enquiry';
+            // Everything the visitor typed is escaped, so it shows up as text and never as markup.
+            const esc = (value) => String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/\r?\n/g, '<br>');
             const content = `
                 <p>Your Enquiry Details:</p>
-                <p><strong>Name:</strong> ${contact_name}</p>
-                <p><strong>Phone:</strong> ${contact_phone}</p>
-                <p><strong>Message:</strong> ${contact_message}</p>
-                <p><strong>Email ID:</strong> ${contact_email}</p>
+                <p><strong>Name:</strong> ${esc(contact_name)}</p>
+                <p><strong>Phone:</strong> ${esc(contact_phone)}</p>
+                <p><strong>Message:</strong> ${esc(contact_message)}</p>
+                <p><strong>Email ID:</strong> ${esc(contact_email)}</p>
             `;
 
             await sendMail(RECEIVER_EMAIL, mailSubject, content);

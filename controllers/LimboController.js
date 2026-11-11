@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const limboService = require('../services/limboService');
 
@@ -66,7 +67,7 @@ class LimboController {
             }
 
             // Get pagination parameters from the query (if available)
-            const { page = 1, perPage = 10 } = req.query; // Default: page 1, 10 items per page
+            const { page, perPage } = parsePaging(req.query); // Default: page 1, 10 items per page
     
             // Fetch blogs using the service
             const { limboBetHistory, totalCount } = await limboService.limboUserList(Number(page), Number(perPage), user_id);

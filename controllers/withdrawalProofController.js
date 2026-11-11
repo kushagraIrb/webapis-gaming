@@ -1,11 +1,11 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const withdrawalProofService = require('../services/withdrawalProofService');
 
 class WithdrawalProofController {
     async latest75Records(req, res) {
         try {
-            const perPage = parseInt(req.query.perPage) || 5;
-            const page = parseInt(req.query.page) || 1;
+            const { page, perPage } = parsePaging(req.query, { defaultPerPage: 5, maxPerPage: 75 });
 
             const { data, totalCount } =
                 await withdrawalProofService.getLatest75Records(perPage, page);

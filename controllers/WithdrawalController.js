@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const withdrawalService = require('../services/withdrawalService');
 
@@ -95,8 +96,7 @@ class WithdrawalController {
     async listWithdrawalHistory(req, res) {
         try {
             const userId = req.user_id;
-            const perPage = parseInt(req.query.perPage) || 10;
-            const page = parseInt(req.query.page) || 1;
+            const { page, perPage } = parsePaging(req.query);
     
             if (!userId) {
                 return res.status(400).json({ status: false, message: 'User ID is required' });

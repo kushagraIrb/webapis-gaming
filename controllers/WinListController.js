@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const winListService = require('../services/winListService');
 
@@ -5,7 +6,7 @@ class WinListController {
     // Get todays match
     async getWinList(req, res) {
         try {
-            const { page = 1, perPage = 10 } = req.query; // Query parameters
+            const { page, perPage } = parsePaging(req.query); // Query parameters
 
             // Fetch all of today's match
             const result = await winListService.getWinListData(Number(page), Number(perPage));

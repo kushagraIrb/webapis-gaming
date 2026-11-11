@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const betListService = require('../services/betListService');
 const moment = require('moment-timezone');
@@ -28,7 +29,7 @@ class BetController {
     async getBettingOrderList(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
             const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
             const winnerStatus = typeof req.query.winnerStatus === 'string' ? req.query.winnerStatus : '';
             const status = typeof req.query.status === 'string' ? req.query.status : '';

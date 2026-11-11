@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const walletService = require('../services/walletService');
 
@@ -11,7 +12,7 @@ class WalletController {
                 return res.status(400).send({ msg: 'User ID is required!' });
             }
 
-            const { page = 1, perPage = 10 } = req.query; // Query parameters
+            const { page, perPage } = parsePaging(req.query); // Query parameters
 
             // Fetch wallet history or count using the service
             const result = await walletService.fetchWalletHistory(userId, Number(page), Number(perPage));
@@ -65,7 +66,8 @@ class WalletController {
                 return res.status(400).send({ status: false, message: 'User ID is required!' });
             }
 
-            const { page = 1, perPage = 10, year } = req.query;
+            const { page, perPage } = parsePaging(req.query);
+            const { year } = req.query;
 
             if (!year || !/^\d{4}$/.test(String(year))) {
                 return res.status(400).send({

@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const ticketService = require('../services/ticketService');
 
@@ -103,7 +104,7 @@ class TicketController {
                 return res.status(400).send({ msg: 'User ID is required!' });
             }
 
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
 
             // Fetch ticket history
             const [data, total] = await ticketService.getTicketHistory(userId, Number(page), Number(perPage));
