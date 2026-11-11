@@ -1,10 +1,11 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const eventsService = require('../services/eventsService');
 
 class EventsController {
     async events(req, res) {
         try {
-            const { page = 1, perPage = 10 } = req.query; // Default: page 1, 10 items per page
+            const { page, perPage } = parsePaging(req.query); // Default: page 1, 10 items per page
     
             const { eventsList, totalCount } = await eventsService.eventsList(Number(page), Number(perPage));
     

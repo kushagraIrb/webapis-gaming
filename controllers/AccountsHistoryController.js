@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const accountHistoryService = require('../services/accountHistoryService');
 
@@ -6,7 +7,7 @@ class AccountHistoryController {
     async fetchAccountHistory(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query; // Query parameters
+            const { page, perPage } = parsePaging(req.query); // Query parameters
 
             // Fetch account history or count using the service
             const { accountData, totalCount } = await accountHistoryService.fetchAccountHistory(userId, Number(page), Number(perPage));

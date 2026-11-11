@@ -8,7 +8,6 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const { setupPrimary: setupSocketClusterPrimary } = require('@socket.io/cluster-adapter');
-const { swaggerUi, swaggerDocs } = require('./config/swagger.js');
 const { logger, deleteOldLogs } = require('./logger.js');
 const db = require('./config/database.js');
 const setupRoutes = require('./config/routes.js');
@@ -66,6 +65,9 @@ if (cluster.isMaster) {
 } else {
     const app = express();
 
+    // Do not tell clients which framework this is (audit F-016).
+    app.disable('x-powered-by');
+
     // Middleware setup
     app.use(express.json());
     app.use(bodyParser.json());
@@ -73,8 +75,8 @@ if (cluster.isMaster) {
     app.use(cors());
     app.use(cookieParser());
 
-    // Swagger API docs
-    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+    // The public /api-docs page was removed (audit F-016). The Swagger definitions and
+    // config/swagger.js are kept; `npm run generateDoc` still builds the docs file.
 
     // Request logger
     app.use((req, res, next) => {

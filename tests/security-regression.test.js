@@ -672,6 +672,101 @@ test('F-028: registration with a referral code succeeds and records the referral
   }
 });
 
+// ── F-016: no framework header, no public API docs page ──
+test('F-016: responses do not advertise Express and /api-docs is not served', async () => {
+  const res = await fetch(`${API_BASE_URL}/api/blogs?page=1&perPage=1`);
+  assert.strictEqual(res.headers.get('x-powered-by'), null, 'the X-Powered-By header must be absent');
+  assert.strictEqual(res.status, 200, 'normal API calls must still work');
+  assert.strictEqual(res.headers.get('access-control-allow-origin'), '*', 'CORS is unchanged on purpose');
+  for (const url of ['/api-docs', '/api-docs/', '/api-docs/swagger-ui-init.js']) {
+    const docs = await fetch(`${API_BASE_URL}${url}`);
+    assert.strictEqual(docs.status, 404, `${url} must no longer be served`);
+  }
+});
+
+// ── F-031: the mail connection verifies the server certificate and does not log the conversation ──
+test('F-031: SMTP uses certificate verification and has no debug logging', async () => {
+  const nodemailer = require('nodemailer');
+  const original = nodemailer.createTransport;
+  const saved = process.env.SMTP_ALLOW_SELF_SIGNED;
+  let options = null;
+  nodemailer.createTransport = (opts) => { options = opts; return { verify: async () => true, sendMail: async () => ({}) }; };
+  try {
+    delete process.env.SMTP_ALLOW_SELF_SIGNED;
+    await require('../helpers/sendMail')('audit@invalid.local', 'subject', '<p>x</p>');
+    assert.ok(options, 'the transport must have been created');
+    assert.strictEqual(options.tls.rejectUnauthorized, true, 'certificates must be verified by default');
+    assert.ok(!options.debug && !options.logger, 'SMTP debug logging must be off');
+    process.env.SMTP_ALLOW_SELF_SIGNED = 'true';
+    await require('../helpers/sendMail')('audit@invalid.local', 'subject', '<p>x</p>');
+    assert.strictEqual(options.tls.rejectUnauthorized, false, 'the explicit self-signed switch still works');
+  } finally {
+    nodemailer.createTransport = original;
+    if (saved === undefined) delete process.env.SMTP_ALLOW_SELF_SIGNED; else process.env.SMTP_ALLOW_SELF_SIGNED = saved;
+  }
+});
+
+// ── F-032: page size is capped on list endpoints ──
+test('F-032: a huge perPage cannot pull a whole table', async () => {
+  const { token, cleanup } = await makeTestUser('f032');
+  try {
+    let res = await (await fetch(`${API_BASE_URL}/api/with-proof/latest-records?page=1&perPage=100000`)).json();
+    assert.ok(res.data.length <= 75, `the public proof list must never return more than 75 rows (got ${res.data.length})`);
+    assert.ok(res.perPage <= 75, 'the reported page size must be capped');
+    res = await (await fetch(`${API_BASE_URL}/api/with-proof/latest-records?page=1000&perPage=50`)).json();
+    assert.strictEqual(res.data.length, 0, 'pages beyond the 75th row must be empty');
+    const bad = await fetch(`${API_BASE_URL}/api/with-proof/latest-records?page=abc&perPage=xyz`);
+    assert.strictEqual(bad.status, 200, 'non-numeric paging values must fall back to defaults, not crash');
+
+    res = await (await fetch(`${API_BASE_URL}/api/blogs?page=1&perPage=100000`)).json();
+    assert.ok(res.perPage <= 100, 'public lists are capped at 100 per page');
+    res = await (await fetch(`${API_BASE_URL}/api/withdrawal/history?page=1&perPage=100000`, { headers: authJson(token) })).json();
+    assert.ok(res.perPage <= 100, 'logged-in lists are capped at 100 per page');
+    res = await (await fetch(`${API_BASE_URL}/api/deposit/history?page=1&perPage=100000`, { headers: authJson(token) })).json();
+    assert.strictEqual(res.perPage, 1000, 'deposit history keeps its higher cap of 1000 (the deposit screen asks for 1000)');
+    res = await (await fetch(`${API_BASE_URL}/api/blogs?page=1&perPage=6`)).json();
+    assert.strictEqual(res.perPage, 6, 'a normal page size is passed through unchanged');
+  } finally {
+    await cleanup();
+  }
+});
+
+// ── F-033: contact-form text is escaped in the email, and the form is rate limited ──
+test('F-033: contact form text is escaped in the email and submissions are rate limited', async () => {
+  const nodemailer = require('nodemailer');
+  const original = nodemailer.createTransport;
+  let mail = null;
+  nodemailer.createTransport = () => ({ verify: async () => true, sendMail: async (m) => { mail = m; return {}; } });
+  try {
+    const contactUsService = require('../services/contactUsService');
+    await contactUsService.sendEmail({
+      contact_name: '<b>Bob</b>', contact_email: 'x@y.z"><a href="https://evil.example">', contact_phone: '1',
+      contact_message: '<script>alert(1)</script>\nsecond line',
+    });
+    assert.ok(mail, 'an email must have been built');
+    const html = String(mail.html);
+    assert.ok(!/<script/i.test(html) && !/<b>Bob/.test(html) && !/<a href=/i.test(html), 'visitor-supplied markup must not appear as markup');
+    assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;') && html.includes('&lt;b&gt;Bob&lt;/b&gt;'), 'it must appear as escaped text');
+    assert.ok(html.includes('second line'), 'ordinary text is kept');
+  } finally {
+    nodemailer.createTransport = original;
+  }
+
+  assert.notStrictEqual(String(process.env.RATE_LIMIT_DISABLED).toLowerCase(), 'true', 'run this test without RATE_LIMIT_DISABLED');
+  const express = require('express');
+  const limits = require('../helpers/rateLimiters');
+  const app = express();
+  app.post('/contact', limits.contactForm, (req, res) => res.json({ ok: true }));
+  const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
+  try {
+    const hit = () => fetch(`http://127.0.0.1:${server.address().port}/contact`, { method: 'POST' }).then(r => r.status);
+    for (let i = 0; i < 5; i++) assert.strictEqual(await hit(), 200);
+    assert.strictEqual(await hit(), 429, 'the 6th contact submission within an hour must be refused');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 // ── F-018: a user must not be able to bet more than their real balance via concurrent bets ──
 test('F-018: two simultaneous coin-flip bets on one match cannot together exceed the real balance', async () => {
   const { userId, token, cleanup } = await makeTestUser('f018');

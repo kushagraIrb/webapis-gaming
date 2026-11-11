@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const coinFlipService = require('../services/coinFlipService');
 const liveBetService = require('../services/liveBetService');
@@ -221,7 +222,7 @@ class CoinFlipController {
             }
 
             // Get pagination parameters from the query (if available)
-            const { page = 1, perPage = 10 } = req.query; // Default: page 1, 10 items per page
+            const { page, perPage } = parsePaging(req.query); // Default: page 1, 10 items per page
     
             // Fetch blogs using the service
             const { coinFlipHistory, totalCount } = await coinFlipService.coinFlipList(Number(page), Number(perPage), user_id);

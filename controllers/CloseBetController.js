@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const closeBetService = require('../services/closeBetService');
 
@@ -11,7 +12,7 @@ class closeBetController {
                 return res.status(400).send({ msg: 'User ID is required!' });
             }
     
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
             const { closedMatches = [], totalCount = 0 } = await closeBetService.getCloseBetHistory(Number(page), Number(perPage)) || {};
     
             if (!Array.isArray(closedMatches)) {

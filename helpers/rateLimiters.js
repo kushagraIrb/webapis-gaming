@@ -41,6 +41,8 @@ module.exports = {
     registerPerIp: make({ windowMinutes: 60, max: 60, key: (req) => `register-ip:${clientIp(req)}` }),
     // Password reset requests and submissions: 10 per hour per IP.
     passwordReset: make({ windowMinutes: 60, max: 10, key: (req) => `reset:${clientIp(req)}` }),
+    // Contact form (public, and each submission sends an email): 5 per hour per IP.
+    contactForm: make({ windowMinutes: 60, max: 5, key: (req) => `contact:${clientIp(req)}`, message: 'Too many messages sent. Please try again later.' }),
     // Token refresh: 100 per 15 minutes per IP.
     tokenRefresh: make({ windowMinutes: 15, max: 100, key: (req) => `refresh:${clientIp(req)}` }),
 };

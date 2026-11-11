@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const bonusService = require('../services/bonusService');
 
@@ -6,7 +7,7 @@ class BonusController {
     async getBonusListing(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
     
             const result = await bonusService.fetchBonusListing(userId, Number(page), Number(perPage));
             const { total_count, bonusList } = result;

@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const depositService = require('../services/depositService');
 
@@ -6,7 +7,7 @@ class DepositController {
     async fetchDepositHistory(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query; // Query parameters
+            const { page, perPage } = parsePaging(req.query, { maxPerPage: 1000 }); // Query parameters
 
             // Fetch deposit history and count using the service
             const { deposits, totalCount } = await depositService.fetchDepositHistory(userId, Number(page), Number(perPage));

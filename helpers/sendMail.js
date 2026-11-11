@@ -25,10 +25,10 @@ const sendMail = async (email, mailSubject, content) => {
             greetingTimeout: 5000,
             socketTimeout: 10000,
             tls: {
-                rejectUnauthorized: false // allows self-signed certs temporarily
-            },
-            debug: true, // logs SMTP conversation
-            logger: true
+                // Certificates are verified. Only a private mail server with a self-signed
+                // certificate needs SMTP_ALLOW_SELF_SIGNED=true; it is off by default.
+                rejectUnauthorized: String(process.env.SMTP_ALLOW_SELF_SIGNED || '').toLowerCase() !== 'true'
+            }
         });
 
         // Verify connection & authentication

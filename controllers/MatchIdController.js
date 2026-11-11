@@ -1,3 +1,4 @@
+const { parsePaging } = require('../helpers/paging');
 const { logger } = require('../logger');
 const matchIdService = require('../services/matchIdService');
 const walletModel = require('../models/walletModel');
@@ -7,7 +8,7 @@ class MatchIdController {
     async demoSitesListing(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
     
             const { siteData, totalCount } =
                 await matchIdService.demoSitesListing(
@@ -101,7 +102,7 @@ class MatchIdController {
     async myMatchIds(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
     
             const { matchData, totalCount } =
                 await matchIdService.getUserMatchIds(
@@ -277,7 +278,7 @@ class MatchIdController {
     async transferHistory(req, res) {
         try {
             const userId = req.user_id;
-            const { page = 1, perPage = 10 } = req.query;
+            const { page, perPage } = parsePaging(req.query);
     
             const { history, totalCount } =
                 await matchIdService.transferHistory(
