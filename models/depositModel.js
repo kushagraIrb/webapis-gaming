@@ -4,7 +4,7 @@ const moment = require('moment');
 class DepositModel {
     // Fetch deposit history for a user with pagination
     static async getDepositHistory(userId, start, perPage) {
-        let query = `SELECT  deposit_id, deposit_screenshot, deposit_amount_step1 AS deposit_amount, status, approved_date AS created_date FROM tbl_deposit_list WHERE user_id = ? AND status = 1 UNION SELECT  deposit_id, deposit_screenshot, deposit_amount_step1 AS deposit_amount, status, created_date FROM tbl_deposit_log WHERE user_id = ? AND status = 2 ORDER BY created_date DESC`;
+        let query = `SELECT  deposit_id, deposit_screenshot, deposit_amount_step1 AS deposit_amount, status, approved_date AS created_date, COALESCE(fake_deposit, 0) AS fake_deposit FROM tbl_deposit_list WHERE user_id = ? AND status = 1 UNION SELECT  deposit_id, deposit_screenshot, deposit_amount_step1 AS deposit_amount, status, created_date, 0 AS fake_deposit FROM tbl_deposit_log WHERE user_id = ? AND status = 2 ORDER BY created_date DESC`;
 
         // Add pagination if required
         if (perPage !== null && start !== null) {
