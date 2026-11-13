@@ -1,5 +1,8 @@
 const ticketModel = require('../models/ticketModel');
+const ticketEventModel = require('../models/ticketEventModel');
 const moment = require('moment-timezone');
+
+const istNow = () => moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
 
 class TicketService {
     // Delete Old Ticket
@@ -44,6 +47,14 @@ class TicketService {
             if (insertResult) {
                 const tokenNo = `${Math.floor(100000 + Math.random() * 900000)}${insertResult.insertId}`;
                 await ticketModel.updateTicketWithToken(insertResult.insertId, tokenNo);
+                // Ticket Statistics log (never throws)
+                await ticketEventModel.record({
+                    messageId: insertResult.insertId,
+                    tokenNo,
+                    eventType: 'created',
+                    userId: ticketData.userBy,
+                    eventAt: istNow()
+                });
                 return { status: true, tokenNo };
             }
             return null;
@@ -72,7 +83,15 @@ class TicketService {
                 err.statusCode = 404;
                 throw err;
             }
-            await ticketModel.insertTicketReply(ticketData);
+            const replyResult = await ticketModel.insertTicketReply(ticketData);
+            // Ticket Statistics log (never throws)
+            await ticketEventModel.record({
+                messageId: replyResult && replyResult.insertId,
+                tokenNo: ticketData.token_no,
+                eventType: 'user_reply',
+                userId: ticketData.userBy,
+                eventAt: istNow()
+            });
     
             return { status: true };
         } catch (error) {
