@@ -84,11 +84,7 @@ jobs:
             cd /www/wwwroot/gamingdevapinew.gaminghelperonline.com
 
             echo ">>> Restarting PM2 process..."
-            if pm2 describe gamingDev > /dev/null 2>&1; then
-              pm2 restart gamingDev
-            else
-              pm2 start app.js --name gamingDev
-            fi
+            pm2 restart gamingUserDev
 
             pm2 save
             echo ">>> PM2 status:"

@@ -90,8 +90,8 @@ These are for the OCR services themselves, not for choosing the engine:
 
 Only the selected engine's URL is used and checked. A wrong Google URL does not affect Python,
 and a Python service that is down does not affect Google. These values are read when the
-backend starts, so changing them needs a restart (`pm2 restart gamingLive` in production,
-`gamingDev` on dev). The Google credentials (the Vision key file) live on the PHP service, not in
+backend starts, so changing them needs a restart (`pm2 restart gamingUserLive` in production,
+`gamingUserDev` on dev). The Google credentials (the Vision key file) live on the PHP service, not in
 this backend.
 
 ## When something is wrong
