@@ -344,7 +344,7 @@ class MatchIdController {
             if (result.state === 'in_process') {
                 return res.status(400).send({
                     status: false,
-                    message: 'Request is in process and cannot be cancelled.'
+                    message: 'Your request is being handled by our team right now, so it can no longer be cancelled.'
                 });
             }
     
