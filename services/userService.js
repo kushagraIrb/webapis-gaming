@@ -231,11 +231,15 @@ class UserService {
             </div>
         `;
     
-        // Send Email
-        await otpService.sendOtpEmail(email, mailSubject, content);
-    
-        // Save OTP
+        // Save OTP first, so it is valid the moment the mail arrives.
         await userModel.saveOtp(email, phone, otp);
+
+        // The mail goes out in the background: sendMail opens two SMTP sessions (verify, then send), which made the
+        // Register pop-up wait 3-4 seconds before showing the OTP box. sendMail never throws (it logs its own
+        // failures), so nothing was ever reported to the user from here anyway; the catch is only a safety net.
+        otpService.sendOtpEmail(email, mailSubject, content).catch((mailError) => {
+            logger.error(`OTP email could not be sent: ${mailError.message}`);
+        });
     
         return { msg: 'OTP has been sent successfully!' };
     }
