@@ -673,7 +673,9 @@ class CoinFlipService {
         return null;
       }
 
-      return await this._settleMatch(match, connection);
+      const settled = await this._settleMatch(match, connection);
+      await this._removeLowBalanceLoseUntilUsers(connection);
+      return settled;
     } catch (error) {
       throw new Error('Error in settleEligibleMatch: ' + error.message);
     } finally {
@@ -783,6 +785,38 @@ class CoinFlipService {
 
     if (balance <= LOSE_UNTIL_BALANCE_LIMIT || balance < minimumBet) {
       await coinFlipModel.softRemoveSelectedUser(userId, connection);
+    }
+  }
+
+  /*
+  | _removeLowBalanceLoseUntilUsers(connection)
+  |
+  | "Lose Until Balance 100 or Less" users were only checked right after a forced loss
+  | on their own bet. A user whose balance fell to 100 or less any other way (a
+  | withdrawal, losing a normal round, or a balance too low to bet again) never got
+  | another forced loss, so they stayed in the list for good. After every settled match
+  | all active users of this mode are checked once, so they leave the list as soon as
+  | they are at or below the limit. Never throws: the next match must not be affected.
+  */
+  static async _removeLowBalanceLoseUntilUsers(connection) {
+    try {
+      const userIds = await coinFlipModel.getActiveLoseUntilUserIds(connection);
+      if (!userIds.length) return;
+
+      const minBet = parseFloat(await coinFlipModel.fetchMinBetAmount(connection)) || 0;
+
+      for (const userId of userIds) {
+        const [wallet, bonus] = await Promise.all([
+          this.calculateWalletAmount(userId, connection),
+          this.calculateBonus(userId, connection),
+        ]);
+        const balance = parseFloat(wallet) + parseFloat(bonus);
+        if (balance <= LOSE_UNTIL_BALANCE_LIMIT || balance < minBet) {
+          await coinFlipModel.softRemoveSelectedUser(userId, connection);
+        }
+      }
+    } catch (error) {
+      console.error('[coin-flip] low-balance sweep failed: ' + error.message);
     }
   }
 
