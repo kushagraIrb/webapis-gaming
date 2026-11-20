@@ -1008,6 +1008,13 @@ class CoinFlipModel {
         return rows.length ? rows[0].forced_loss_count : null;
     }
 
+    static async getActiveLoseUntilUserIds(connection) {
+        const [rows] = await exec(connection).query(
+            `SELECT user_id FROM tbl_coin_selected_users WHERE is_active = 1 AND mode = 'lose_until_zero'`
+        );
+        return rows.map((r) => r.user_id);
+    }
+
     static async softRemoveSelectedUser(userId, connection) {
         const query = `
             UPDATE tbl_coin_selected_users
