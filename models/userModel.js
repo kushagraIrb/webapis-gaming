@@ -342,26 +342,31 @@ class UserModel {
         return result;
     }
     
+    // DISABLED for now: this wrote the raw password the user typed into temp_login_log.
+    // The method stays so the callers keep working; it just does not write anything.
+    // To turn it back on, uncomment the block below (better: without the password column).
     static async insertinLog(logData) {
-        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-    
-        const [result] = await db.promise().query(
-            `INSERT INTO temp_login_log 
-            (phone, password, result, query, ip_address, browser_info, api_response, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                logData.phone,
-                logData.password,
-                logData.result,
-                logData.query,
-                logData.ip_address,
-                logData.browser_info,
-                logData.api_response,
-                istTime
-            ]
-        );
-    
-        return result;
+        return null;
+
+        // const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+        //
+        // const [result] = await db.promise().query(
+        //     `INSERT INTO temp_login_log
+        //     (phone, password, result, query, ip_address, browser_info, api_response, created_at)
+        //     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        //     [
+        //         logData.phone,
+        //         logData.password,
+        //         logData.result,
+        //         logData.query,
+        //         logData.ip_address,
+        //         logData.browser_info,
+        //         logData.api_response,
+        //         istTime
+        //     ]
+        // );
+        //
+        // return result;
     }
 
     // static async insertinLog(logData) {
