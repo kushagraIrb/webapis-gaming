@@ -611,6 +611,13 @@ class UserService {
         try {
             const result = await userModel.addAccount(userId, accountData);
 
+            if (result && result.blocked) {
+                const err = new Error('You already have an account added. Adding a new account is temporarily not allowed.');
+                err.statusCode = 400;
+                err.blocked = true;
+                throw err;
+            }
+
             if (!result || result.affectedRows === 0) {
                 const err = new Error('Account addition failed.');
                 err.statusCode = 500;
@@ -619,6 +626,7 @@ class UserService {
 
             return { status: 'Account information added successfully.' };
         } catch (error) {
+            if (error.blocked) throw error;
             throw new Error('Error updating profile: ' + error.message);
         }
     }
