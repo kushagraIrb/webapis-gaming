@@ -1,6 +1,9 @@
 const db = require('../config/database');
 const moment = require('moment');
 
+// TEMPORARY rule: a user who already has an account cannot add another one.
+const SINGLE_ACCOUNT_ONLY = true;
+
 // OTP expiry and attempt limit need two columns (see sql/20261110-otp-expiry-and-attempts.sql).
 // They are used as soon as the columns exist, so the code can ship before or after the migration.
 const OTP_VALID_MINUTES = 5;
@@ -460,6 +463,37 @@ class UserModel {
     }
 
     static async addAccount(userId, accountData) {
+        // TEMPORARY: while SINGLE_ACCOUNT_ONLY is true, a user who already has an account
+        // cannot add another. The check and the insert are one statement, so two quick
+        // clicks cannot both get through. To lift the rule, set it to false (or remove the block).
+        if (SINGLE_ACCOUNT_ONLY) {
+            const istNow = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const [inserted] = await db.promise().query(
+                `INSERT INTO tbl_user_account
+                 (user_id, bank_name, account_number, ifsc, ac_holder_name, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, primary_account, modified)
+                 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?
+                 FROM DUAL
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM tbl_user_account WHERE user_id = ? AND is_soft_deleted = 0
+                 )`,
+                [
+                    userId, accountData.bank_name, accountData.account, accountData.ifsc_code,
+                    accountData.holder_name, accountData.account_type, accountData.addhar_number,
+                    accountData.upi_id, accountData.phone_pay, accountData.g_pay, accountData.paytm,
+                    istNow, userId,
+                ]
+            );
+            if (inserted.affectedRows === 0) {
+                return { blocked: true, affectedRows: 0 };
+            }
+            // Any older (deleted) accounts of this user must not stay primary.
+            await db.promise().query(
+                `UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ? AND ac_id <> ?`,
+                [userId, inserted.insertId]
+            );
+            return inserted;
+        }
+
         // Step 1: Update existing accounts to remove primary status
         const updateQuery = `UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ?`;
         const [updateResult] = await db.promise().query(updateQuery, [userId]);
