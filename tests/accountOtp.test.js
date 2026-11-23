@@ -323,13 +323,18 @@ test('add: junk input is refused cleanly and does not burn the real code', async
   assert.strictEqual(ok.status, 200);
 });
 
-test('add: a user who already has an account is refused before any code is sent', async () => {
+test('add: a user who already has an account can add another, with a code (the one-account rule is lifted)', async () => {
   const user = await makeUser();
   await giveAccount(user.id);
-  const res = await call(user, 'POST', '/users/add-account', form(), GEO);
-  assert.strictEqual(res.status, 400);
-  assert.match(res.json.message, /already have an account/);
-  assert.strictEqual(codeMails().length, 0);
+  const first = await call(user, 'POST', '/users/add-account', form(), GEO);
+  assert.strictEqual(first.status, 202);
+  assert.strictEqual(codeMails().length, 1);
+  assert.strictEqual((await accountRows(user.id)).length, 1, 'nothing is saved before the code');
+  const ok = await call(user, 'POST', '/users/add-account', { ...form(), challengeId: first.json.challengeId, otp: lastCode() }, GEO);
+  assert.strictEqual(ok.status, 200);
+  const rows = await accountRows(user.id);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows.filter((r) => r.primary_account === 1).length, 1, 'only one primary account');
 });
 
 test('delete: first call sends a code and deletes nothing; the right code deletes; a primary account is refused up front', async () => {
