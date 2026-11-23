@@ -85,7 +85,7 @@ class UserService {
         const { user, deviceId, method } = await DeviceTrust.verify(challengeId, otp, req);
         const { accessToken, refreshToken } = await this.issueSession(user.id);
         const msg = method === 'google' ? 'Google login successful!' : 'Login successful!';
-        return { msg, accessToken, refreshToken, deviceId };
+        return { msg, accessToken, refreshToken, deviceId, userId: user.id, method };
     }
 
     static async resendLoginOtp(challengeId) {
@@ -535,7 +535,7 @@ class UserService {
         // Update session token in the database
         await userModel.updateSessionToken(user.id, newAccessToken, newRefreshToken);
 
-        return { msg: 'Login successful!', newAccessToken, newRefreshToken };
+        return { msg: 'Login successful!', newAccessToken, newRefreshToken, userId: user.id };
     }
 
     // Validate user by phone
