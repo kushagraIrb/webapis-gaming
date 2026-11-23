@@ -3,6 +3,7 @@ const requestIp = require('request-ip');
 const trustedDeviceModel = require('../models/trustedDeviceModel');
 const userModel = require('../models/userModel');
 const sendMail = require('../helpers/sendMail');
+const browserName = require('../helpers/browserName');
 const { logger } = require('../logger');
 
 // New-device login check. A password or Google login from a browser the account has not
@@ -220,7 +221,7 @@ class DeviceTrustService {
                 <p>We noticed a login from a browser or device we do not recognise. Enter this code to continue:</p>
                 <p style="font-size: 32px; letter-spacing: 8px; font-weight: bold; margin: 16px 0;">${otp}</p>
                 <p>This code is valid for ${OTP_VALID_MINUTES} minutes. Never share it with anyone.</p>
-                <p style="color: #666; font-size: 13px;">Browser: ${escapeHtml(ctx.browser || 'Unknown')}<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}</p>
+                <p style="color: #666; font-size: 13px;">IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
                 <p style="color: #666; font-size: 13px;">If this was not you, do not enter the code and change your password.</p>
             </div>`;
         Promise.resolve(sendMail(email, 'Gaming Helper Online - Login verification code', content))
@@ -236,7 +237,7 @@ class DeviceTrustService {
                 <h2>Gaming Helper Online</h2>
                 <p>Hello ${escapeHtml(user.first_name || 'there')},</p>
                 <p>Your account was just logged in from a new device.</p>
-                <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>Browser: ${escapeHtml(ctx.browser || 'Unknown')}<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}</p>
+                <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
                 <p>If this was you, no action is needed. If not, change your password immediately and contact support.</p>
             </div>`;
         Promise.resolve(sendMail(email, 'New device login on your Gaming Helper account', content))
