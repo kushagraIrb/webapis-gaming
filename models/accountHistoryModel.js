@@ -97,6 +97,42 @@ class AccountHistoryModel {
     }
 
 
+    // Fields used for the masked hint in the bank account OTP email and the activity log.
+    static async getAccountHintFields(userId, accountId) {
+        const [rows] = await db.promise().query(
+            'SELECT upi_id, account_number FROM tbl_user_account WHERE user_id = ? AND ac_id = ? LIMIT 1',
+            [userId, accountId]
+        );
+        return rows[0] || null;
+    }
+
+    // Read-only copy of the checks changePrimaryAccount makes, so a bank account OTP is not sent
+    // for a change that would be refused. changePrimaryAccount still makes the real checks.
+    static async assertCanMakePrimary(userId, accountId) {
+        const fail = (message, statusCode) => {
+            const err = new Error(message);
+            err.statusCode = statusCode;
+            return err;
+        };
+
+        const [own] = await db.promise().query(
+            `SELECT ac_id FROM tbl_user_account
+             WHERE user_id = ? AND ac_id = ? AND (is_soft_deleted = 0 OR is_soft_deleted IS NULL)`,
+            [userId, accountId]
+        );
+        if (!own.length) {
+            throw fail('Account not found.', 404);
+        }
+
+        const [pending] = await db.promise().query(
+            `SELECT COUNT(*) AS pendingCount FROM tbl_withdrawal WHERE user_id = ? AND status = '0'`,
+            [userId]
+        );
+        if (pending[0].pendingCount > 0) {
+            throw fail('You cannot change your primary account while a withdrawal request is pending.', 400);
+        }
+    }
+
     static async softDeleteAccount(userId, accountId) {
         try {
             const [result] = await db.promise().query(

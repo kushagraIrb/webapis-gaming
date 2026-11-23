@@ -6,6 +6,7 @@ const requestIp = require('request-ip');
 const authLog = require('../models/authLogModel');
 const userModel = require('../models/userModel');
 const DeviceTrust = require('../services/deviceTrustService');
+const AccountOtp = require('../services/accountOtpService');
 
 // Registration must not fail after the account exists, so a problem here is only logged.
 async function trustRegisteringDevice(userId, req) {
@@ -519,18 +520,44 @@ class UserController {
                 paytm: req.body.paytm,
             };
     
+            // With ACCOUNT_OTP_ENABLED the account is saved only on the second call, which carries
+            // the emailed code. The first call just sends the code.
+            const hint = await AccountOtp.hintFor(AccountOtp.PURPOSES.ADD, userId, accountData);
+            const gate = await AccountOtp.gateAction(req, userId, AccountOtp.PURPOSES.ADD, accountData, {
+                hint,
+                precheck: async () => {
+                    if (await userModel.isAddAccountBlocked(userId)) {
+                        const err = new Error('You already have an account added. Adding a new account is temporarily not allowed.');
+                        err.statusCode = 400;
+                        throw err;
+                    }
+                },
+            });
+
+            if (!gate.proceed) {
+                return res.status(202).json({
+                    otpRequired: true,
+                    challengeId: gate.challengeId,
+                    email: gate.maskedEmail,
+                    message: `We sent a verification code to ${gate.maskedEmail}.`
+                });
+            }
+
             const response = await userService.addAccount(userId, accountData);
-    
-            return res.status(200).send(response);
+            AccountOtp.completed(req, userId, AccountOtp.PURPOSES.ADD, { acId: response.acId, hint });
+
+            return res.status(200).send({ status: response.status });
         } catch (error) {
             const statusCode = error.statusCode || 500;
 
             if (statusCode === 500) {
                 logger.error(`Error in addAccount: ${error.message}`, { stack: error.stack });
             }
-    
+
+            // A server error never shows its raw text (it is already in the log above).
             return res.status(statusCode).send({
-                message: error.message || 'Something went wrong'
+                message: statusCode === 500 ? 'Something went wrong. Please try again.' : (error.message || 'Something went wrong'),
+                ...(error.restartOtp && { restartOtp: true })
             });
         }
     }

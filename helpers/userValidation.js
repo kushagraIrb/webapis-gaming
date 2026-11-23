@@ -37,14 +37,27 @@ exports.editProfileValidation = [
     check('last_name', 'Last Name is required').not().isEmpty()
 ];
 
+// Maximum lengths are the column sizes of tbl_user_account. Longer values would be cut off
+// silently (or fail) when saved, and with the bank account OTP a code would already have been
+// emailed for details that can never be saved as typed. Values must be text: an object or array
+// would be expanded into SQL by the database layer.
+const accountField = (field, requiredMessage, label, max) =>
+    check(field, requiredMessage)
+        .isString().withMessage(label + ' is invalid').bail()
+        .not().isEmpty().bail()
+        .isLength({ max }).withMessage(label + ' is too long (maximum ' + max + ' characters)');
+
 exports.addAccountValidation = [
-    check('holder_name','Holder name is required').not().isEmpty(),
-    check('account','Account is required').not().isEmpty(),
-    check('ifsc_code','IFSC Code is required').not().isEmpty(),
-    check('bank_name','Bank Name is required').not().isEmpty(),
-    check('account_type','Select account type').not().isEmpty(),
-    check('upi_id','UPI ID is required').not().isEmpty(),
-    check('phone_pay','Phone Pay Number is required').not().isEmpty(),
-    check('g_pay','Goggle Pay Number is required').not().isEmpty(),
-    check('paytm','Paytm Number is required').not().isEmpty(),
+    accountField('holder_name', 'Holder name is required', 'Holder name', 200),
+    accountField('account', 'Account is required', 'Account number', 25),
+    accountField('ifsc_code', 'IFSC Code is required', 'IFSC code', 25),
+    accountField('bank_name', 'Bank Name is required', 'Bank name', 100),
+    accountField('account_type', 'Select account type', 'Account type', 150),
+    accountField('upi_id', 'UPI ID is required', 'UPI ID', 150),
+    accountField('phone_pay', 'Phone Pay Number is required', 'Phone Pay number', 150),
+    accountField('g_pay', 'Goggle Pay Number is required', 'Google Pay number', 150),
+    accountField('paytm', 'Paytm Number is required', 'Paytm number', 150),
+    check('addhar_number').optional({ nullable: true })
+        .isString().withMessage('Aadhar number is invalid').bail()
+        .isLength({ max: 150 }).withMessage('Aadhar number is too long (maximum 150 characters)'),
 ];

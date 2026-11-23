@@ -32,7 +32,9 @@ class AccountHistoryModel {
             const account = await accountHistoryModel.getAccountById(userId, accountId);
 
             if (!account) {
-                throw new Error('Account not found');
+                const notFound = new Error('Account not found');
+                notFound.statusCode = 404;
+                throw notFound;
             }
 
             if (account.primary_account === 1) {
