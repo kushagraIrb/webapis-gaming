@@ -5,6 +5,7 @@ const liveBetService = require('../services/liveBetService');
 const requestIp = require('request-ip');
 const userModel = require('../models/userModel');
 const DeviceTrust = require('../services/deviceTrustService');
+const authLog = require('../models/authLogModel');
 
 // Registration must not fail after the account exists, so a problem here is only logged.
 async function trustRegisteringDevice(userId, req) {
@@ -185,6 +186,7 @@ class UserController {
             });
 
             // The browser that just registered is trusted, so the first login on it does not ask for an OTP.
+            authLog.record(req, { userId, eventType: 'signup', method: 'password' });
             const deviceId = await trustRegisteringDevice(userId, req);
 
             // Send response back to the client
@@ -213,6 +215,7 @@ class UserController {
                 maxAge: 30 * 24 * 60 * 60 * 1000
             });
 
+            authLog.record(req, { userId, eventType: 'signup', method: 'google' });
             const deviceId = await trustRegisteringDevice(userId, req);
 
             return res.status(200).send({ msg, accessToken, ...(deviceId && { deviceId }) });
@@ -240,6 +243,7 @@ class UserController {
             }
 
             const { accessToken, refreshToken, msg } = googleResult;
+            authLog.record(req, { userId: googleResult.userId, eventType: 'login', method: 'google' });
 
             res.cookie('refreshToken', refreshToken, {
                 secure: process.env.NODE_ENV === 'production',
@@ -250,6 +254,9 @@ class UserController {
             return res.status(200).send({ msg, accessToken });
         } catch (error) {
             const statusCode = error.statusCode || 500;
+            if (statusCode !== 500) {
+                authLog.recordFailure(req, { method: 'google', reason: error.message });
+            }
             if (statusCode === 500) {
                 logger.error(`Google login error: ${error.message}`, { stack: error.stack });
             }
@@ -316,6 +323,7 @@ class UserController {
             }
 
             const { msg, newAccessToken, newRefreshToken } = loginResult;
+            authLog.record(req, { userId: loginResult.userId, eventType: 'login', method: 'password' });
 
             apiResponseMsg = msg;
             result = 1;
@@ -338,6 +346,11 @@ class UserController {
         } catch (error) {
             const statusCode = error.statusCode || 500;
             apiResponseMsg = error.message || 'Login failed';
+
+            // A refused login (wrong password, unknown phone, blocked account) goes in the activity log.
+            if (statusCode !== 500) {
+                authLog.recordFailure(req, { method: 'password', reason: req.authFailReason || apiResponseMsg, phone });
+            }
 
             // A failure to write the login log must never stop the response being sent.
             try {
@@ -362,7 +375,8 @@ class UserController {
     async verifyLoginOtp(req, res) {
         try {
             const { challengeId, otp } = req.body || {};
-            const { msg, accessToken, refreshToken, deviceId } = await userService.completeDeviceLogin(challengeId, otp, req);
+            const { msg, accessToken, refreshToken, deviceId, userId, method } = await userService.completeDeviceLogin(challengeId, otp, req);
+            authLog.record(req, { userId, eventType: 'login', method: method === 'google' ? 'google' : 'otp' });
 
             res.cookie('refreshToken', refreshToken, {
                 secure: process.env.NODE_ENV === 'production',
@@ -374,6 +388,10 @@ class UserController {
             return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId });
         } catch (error) {
             const statusCode = error.statusCode || 500;
+
+            if (statusCode !== 500 && error.userId) {
+                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
+            }
 
             if (statusCode === 500) {
                 logger.error(`Error verifying login OTP: ${error.message}`, { stack: error.stack });
