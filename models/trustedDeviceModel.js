@@ -51,6 +51,22 @@ class TrustedDeviceModel {
         return result.insertId;
     }
 
+    // Code for a bank account change. Needs sql/20261125-account-otp-challenge-columns.sql.
+    // payloadHash fixes the exact details the code approves; purpose keeps it from being used
+    // for a login or for another kind of change.
+    static async createPurposeChallenge({ challengeHash, userId, purpose, payloadHash, otpHash, ipAddress, browser, validMinutes }) {
+        await db.promise().query(
+            'DELETE FROM tbl_login_challenge WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)'
+        );
+        const [result] = await db.promise().query(
+            `INSERT INTO tbl_login_challenge
+             (challenge_hash, user_id, auth_method, purpose, payload_hash, otp_hash, last_sent_at, expires_at, ip_address, browser)
+             VALUES (?, ?, 'account', ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? MINUTE), ?, ?)`,
+            [challengeHash, userId, purpose, payloadHash, otpHash, validMinutes, ipAddress, browser]
+        );
+        return result.insertId;
+    }
+
     static async getChallenge(challengeHash) {
         const [rows] = await db.promise().query(
             `SELECT *, (expires_at > NOW()) AS is_live, TIMESTAMPDIFF(SECOND, last_sent_at, NOW()) AS seconds_since_sent

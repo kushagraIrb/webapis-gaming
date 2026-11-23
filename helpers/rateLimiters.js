@@ -38,6 +38,11 @@ module.exports = {
     loginOtpPerChallenge: make({ windowMinutes: 15, max: 10, key: (req) => `login-otp:${clientIp(req)}:${field(req.body && req.body.challengeId).slice(0, 16)}`, message: 'Too many attempts. Please log in again.' }),
     loginOtpPerIp: make({ windowMinutes: 15, max: 100, key: (req) => `login-otp-ip:${clientIp(req)}` }),
     loginOtpResend: make({ windowMinutes: 15, max: 10, key: (req) => `login-otp-resend:${clientIp(req)}`, message: 'Too many codes requested. Please wait a while and try again.' }),
+    // Bank account changes (add, delete, set primary; each needs an emailed code). These routes sit
+    // behind the login check, so the limit is per user. Wrong guesses are also capped per code in
+    // the database (5), which is the real limit because these counters are per worker.
+    accountOtpPerUser: make({ windowMinutes: 15, max: 30, key: (req) => `account-otp:${req.user_id || clientIp(req)}`, message: 'Too many attempts. Please wait a while and try again.' }),
+    accountOtpResend: make({ windowMinutes: 15, max: 10, key: (req) => `account-otp-resend:${req.user_id || clientIp(req)}`, message: 'Too many codes requested. Please wait a while and try again.' }),
     // Sending OTP emails: 5 per 15 minutes per email address, 30 per IP.
     otpPerTarget: make({ windowMinutes: 15, max: 5, key: (req) => `otp:${clientIp(req)}:${field(req.body && req.body.email)}`, message: 'Too many verification codes requested. Please wait and try again.' }),
     otpPerIp: make({ windowMinutes: 15, max: 30, key: (req) => `otp-ip:${clientIp(req)}` }),
