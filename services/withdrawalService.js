@@ -26,6 +26,24 @@ class WithdrawalService {
         }
     }
 
+    // The payout details always come from the user's saved primary account, never from the
+    // request: a request could carry any bank account or UPI, whoever sends it.
+    static payoutDetailsFromAccount(primaryAccount) {
+        return {
+            bank: primaryAccount.bank_name,
+            account: primaryAccount.account_number,
+            ifsc: primaryAccount.ifsc,
+            holderName: primaryAccount.ac_holder_name,
+            panNumber: primaryAccount.pan_number,
+            accountType: primaryAccount.account_type,
+            aadharNumber: primaryAccount.addhar_number,
+            upiId: primaryAccount.upi_id,
+            phonePay: primaryAccount.phone_pay,
+            gPay: primaryAccount.g_pay,
+            paytm: primaryAccount.paytm,
+        };
+    }
+
     // Service to save withdrawal request
     static async handleWithdrawal(data) {
         try {
@@ -115,7 +133,7 @@ class WithdrawalService {
             }
 
             // Prepare withdrawal data for saving
-            const withdrawalData = { userId, withdrawalAmount, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm };
+            const withdrawalData = { userId, withdrawalAmount, withdrawalOption, withdrawalText, ...WithdrawalService.payoutDetailsFromAccount(primaryAccount) };
 
             // Save the withdrawal
             const result = await withdrawalModel.saveWithdrawal(withdrawalData);
@@ -301,6 +319,15 @@ class WithdrawalService {
             //     };
             // }
 
+            // The payout goes to the saved primary account only.
+            const primaryAccount = await withdrawalModel.findPrimaryAccount(userId);
+            if (!primaryAccount) {
+                return {
+                    status: false,
+                    message: "Please set a primary account before making a withdrawal request.",
+                };
+            }
+
             // Check slot availability
             const timeMinusDuration = new Date(Date.now() - 15 * 60 * 1000); // Current time minus 15 minutes
             const slotCount = await withdrawalModel.fetchSlotCount(timeMinusDuration);
@@ -327,7 +354,7 @@ class WithdrawalService {
             // await sendMail('kushagra.agrawal@logzerotechnologies.com', mailSubject, content);
 
             // Prepare withdrawal data for saving
-            const withdrawalData = { userId, withdrawalAmount, chargePercent, withdrawalOption, withdrawalText, bank, account, ifsc, holderName, panNumber, accountType, aadharNumber, upiId, phonePay, gPay, paytm };
+            const withdrawalData = { userId, withdrawalAmount, chargePercent, withdrawalOption, withdrawalText, ...WithdrawalService.payoutDetailsFromAccount(primaryAccount) };
 
             // Save the withdrawal
             const result = await withdrawalModel.saveFastWithdrawal(withdrawalData);
