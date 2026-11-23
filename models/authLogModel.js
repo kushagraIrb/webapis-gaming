@@ -31,10 +31,10 @@ function failedLogAllowed(ip) {
 }
 
 class AuthLogModel {
-    // A successful login or signup.
-    static record(req, { userId, eventType, method = 'password' }) {
+    // A successful login or signup, or (eventType 'profile_update') a change to the user's own profile.
+    static record(req, { userId, eventType, method = 'password', details = null }) {
         if (!userId) return;
-        this.write(req, { userId, eventType, method, status: 'success' });
+        this.write(req, { userId, eventType, method, status: 'success', details });
     }
 
     // A failed login. phone is what was typed on a password login; the user is looked up from it.
@@ -44,7 +44,7 @@ class AuthLogModel {
     }
 
     // Never throws and is not awaited by callers: a logging problem must never stop a login.
-    static write(req, { userId = null, eventType, method, status, reason = null, phone = null }) {
+    static write(req, { userId = null, eventType, method, status, reason = null, phone = null, details = null }) {
         (async () => {
             const geo = clientGeo(req);
             let state = geo.state;
@@ -71,9 +71,9 @@ class AuthLogModel {
 
             await db.promise().query(
                 `INSERT INTO tbl_auth_activity_log
-                 (user_id, event_type, status, fail_reason, phone_entered, auth_method, ip_address,
+                 (user_id, event_type, status, fail_reason, phone_entered, auth_method, details, ip_address,
                   country, state, state_source, city, browser, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     uid,
                     eventType,
@@ -81,6 +81,7 @@ class AuthLogModel {
                     reason ? String(reason).slice(0, 100) : null,
                     status === 'failed' ? phoneText : null,
                     method,
+                    details ? String(details).slice(0, 255) : null,
                     clientIp(req),
                     geo.country,
                     state,

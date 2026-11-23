@@ -131,6 +131,7 @@ class UserController {
             const updated = await userService.updateUserName(user_id, first_name, last_name || '');
 
             if (updated) {
+                authLog.record(req, { userId: user_id, eventType: 'profile_update', method: 'session', details: 'name' });
                 return res.status(200).json({
                     msg: 'Name updated successfully.',
                     status: true
@@ -473,6 +474,13 @@ class UserController {
                 profileData.last_name = last_name; // Only include if present
 
             const response = await userService.editProfile(userId, profileData);
+
+            authLog.record(req, {
+                userId,
+                eventType: 'profile_update',
+                method: 'session',
+                details: ['name', req.file ? 'image' : null].filter(Boolean).join(', '),
+            });
     
             return res.status(200).send({message: 'Profile updated successfully'});
         } catch (error) {
