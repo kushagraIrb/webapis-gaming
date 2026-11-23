@@ -665,7 +665,7 @@ class UserService {
                 throw err;
             }
 
-            return { status: 'Account information added successfully.' };
+            return { status: 'Account information added successfully.', acId: result.insertId };
         } catch (error) {
             if (error.blocked) throw error;
             throw new Error('Error updating profile: ' + error.message);
