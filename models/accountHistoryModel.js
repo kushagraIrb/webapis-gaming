@@ -118,7 +118,8 @@ class AccountHistoryModel {
             const query = `
                 SELECT * 
                 FROM tbl_user_account 
-                WHERE user_id = ? AND primary_account = 1 
+                WHERE user_id = ? AND primary_account = 1 AND is_soft_deleted = 0
+                ORDER BY ac_id DESC
                 LIMIT 1
             `;
             const [rows] = await db.promise().query(query, [userId]);
