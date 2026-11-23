@@ -819,7 +819,16 @@ class UserService {
             // Return the new access token
             return { accessToken: newAccessToken };
         } catch (err) {
-            throw new Error('Invalid refresh token.');
+            // A bad, expired, replaced or cleared (force logout) refresh token is the caller's
+            // problem: 401, not a server error. Anything else (for example the database being
+            // down) keeps the generic message and stays a 500 so it is still logged.
+            const rejected = err.statusCode === 401
+                || ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(err.name);
+            const failure = new Error('Invalid refresh token.');
+            if (rejected) {
+                failure.statusCode = 401;
+            }
+            throw failure;
         }
     }
 
