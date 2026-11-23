@@ -38,9 +38,10 @@ class AuthLogModel {
     }
 
     // A failed login. phone is what was typed on a password login; the user is looked up from it.
-    static recordFailure(req, { method = 'password', reason, phone = null, userId = null }) {
+    // eventType / details let another kind of event (for example a bank account change) record a failure too.
+    static recordFailure(req, { method = 'password', reason, phone = null, userId = null, eventType = 'login', details = null }) {
         if (!failedLogAllowed(clientIp(req))) return;
-        this.write(req, { userId, eventType: 'login', method, status: 'failed', reason, phone });
+        this.write(req, { userId, eventType, method, status: 'failed', reason, phone, details });
     }
 
     // Never throws and is not awaited by callers: a logging problem must never stop a login.

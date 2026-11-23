@@ -1,10 +1,10 @@
-// Bank account OTP (add, delete, set primary) and its activity log, over real HTTP through the
-// real routers.
+// Bank account OTP (add, delete, set primary), its codes in otp_verified and its activity in
+// tbl_auth_activity_log, over real HTTP through the real routers.
 //
 // Run with:  node --test tests/accountOtp.test.js
 //
-// Needs the LOCAL gaming_rewamp database with sql/20261123-new-device-login-otp.sql,
-// sql/20261125-account-otp-challenge-columns.sql and sql/20261125-account-activity-log.sql applied.
+// Needs the LOCAL gaming_rewamp database with sql/20261123-new-device-login-otp.sql (login test)
+// and sql/20261126-otp-verified-account-columns.sql applied.
 // The mail sender is stubbed (nothing is sent) and every row the tests create is deleted afterwards.
 // Never point it at a live database.
 
@@ -44,7 +44,8 @@ test.before(async () => {
 test.after(async () => {
   for (const id of created) {
     await db.query('DELETE FROM tbl_user_account WHERE user_id = ?', [id]);
-    await db.query('DELETE FROM tbl_account_activity_log WHERE user_id = ?', [id]);
+    await db.query('DELETE FROM tbl_auth_activity_log WHERE user_id = ?', [id]);
+    await db.query('DELETE FROM otp_verified WHERE user_id = ?', [id]);
     await db.query('DELETE FROM tbl_login_challenge WHERE user_id = ?', [id]);
     await db.query('DELETE FROM tbl_registration WHERE id = ?', [id]);
   }
@@ -122,7 +123,8 @@ const waitFor = async (fn, ms = 3000) => {
     await new Promise((r) => setTimeout(r, 50));
   }
 };
-const logRows = (userId) => waitFor(async () => (await db.query('SELECT * FROM tbl_account_activity_log WHERE user_id = ? ORDER BY id', [userId]))[0]);
+const logRows = (userId) => waitFor(async () => (await db.query('SELECT * FROM tbl_auth_activity_log WHERE user_id = ? ORDER BY id', [userId]))[0]);
+const otpRow = async (userId) => (await db.query('SELECT * FROM otp_verified WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]))[0][0];
 
 test('switch off: the account is saved straight away, no code, no mail, but the log is still written', async () => {
   process.env.ACCOUNT_OTP_ENABLED = 'false';
@@ -132,7 +134,8 @@ test('switch off: the account is saved straight away, no code, no mail, but the 
   assert.strictEqual((await accountRows(user.id)).length, 1);
   assert.strictEqual(codeMails().length, 0);
   const rows = await logRows(user.id);
-  assert.strictEqual(rows[0].step, 'completed');
+  assert.strictEqual(rows[0].event_type, 'profile_update');
+  assert.match(rows[0].details, /^bank account added/);
   assert.strictEqual(rows[0].ip_address, '203.0.113.9');
 });
 
@@ -142,16 +145,22 @@ test('add: first call sends a code and saves nothing; the code email never shows
 
   assert.strictEqual(res.status, 202);
   assert.strictEqual(res.json.otpRequired, true);
-  assert.match(res.json.challengeId, /^[a-f0-9]{64}$/);
+  assert.match(res.json.challengeId, /^\d+$/);
+  const stored = await otpRow(user.id);
+  assert.strictEqual(String(stored.id), res.json.challengeId);
+  assert.strictEqual(stored.otp, lastCode(), 'the code is stored as sent (not hashed)');
+  assert.strictEqual(stored.purpose, 'add_account');
+  assert.strictEqual(stored.email, null);
   assert.strictEqual((await accountRows(user.id)).length, 0, 'nothing is saved before the right code');
   assert.match(lastCode(), /^\d{6}$/);
   const html = sent[sent.length - 1].html;
   assert.ok(html.includes('ne***@oksbi') && html.includes('A/c ****7654'), 'masked hint is shown');
   assert.ok(!html.includes('9876543210987654') && !html.includes('new.person'), 'no full number or UPI in the email');
-  assert.ok(html.includes('Pune, Maharashtra, IN') && html.includes('203.0.113.9'), 'location and IP are in the email');
+  assert.ok(html.includes('IP address: 203.0.113.9'), 'IP is in the email');
+  assert.ok(!html.includes('Pune') && !html.includes('Maharashtra'), 'no location in the email');
 });
 
-test('add: wrong code, then the right code saves it, sends an alert, and logs IP, location and browser', async () => {
+test('add: wrong code, then the right code saves it, sends an alert, and logs IP, location and browser in the auth log', async () => {
   const user = await makeUser();
   const first = await call(user, 'POST', '/users/add-account', form(), GEO);
   const right = lastCode();
@@ -170,16 +179,18 @@ test('add: wrong code, then the right code saves it, sends an alert, and logs IP
     const r = await logRows(user.id);
     return r.length >= 3 ? r : null;
   });
-  assert.deepStrictEqual(rows.map((r) => `${r.step}:${r.status}`), ['otp_sent:success', 'otp_failed:failed', 'completed:success']);
+  assert.deepStrictEqual(rows.map((r) => `${r.event_type}:${r.status}`), ['profile_update:success', 'profile_update:failed', 'profile_update:success']);
+  assert.match(rows[0].details, /^bank account add: code sent/);
+  assert.strictEqual(rows[1].fail_reason, 'wrong_code');
   const done = rows[2];
-  assert.strictEqual(done.action, 'add_account');
+  assert.match(done.details, /^bank account added/);
   assert.strictEqual(done.ip_address, '203.0.113.9');
   assert.strictEqual(done.country, 'IN');
   assert.strictEqual(done.state, 'Maharashtra');
   assert.strictEqual(done.city, 'Pune');
   assert.strictEqual(done.state_source, 'cloudflare');
   assert.strictEqual(done.browser, 'AcctTestBrowser/2.0');
-  assert.ok(done.ac_id, 'the saved account is referenced');
+  assert.match(done.details, /ac_id \d+/, 'the saved account is referenced');
   assert.ok(!JSON.stringify(rows).includes('9876543210987654'), 'the log holds no full account number');
 });
 
@@ -244,11 +255,12 @@ test('a login code cannot approve a bank account change, and an account code can
   const viaAccount = await call(user, 'POST', '/users/add-account', { ...form(), challengeId: loginGate.challengeId, otp: loginMail }, GEO);
   assert.strictEqual(viaAccount.status, 400);
   assert.strictEqual((await accountRows(user.id)).length, 0);
+  assert.strictEqual(await otpRow(user.id), undefined, 'a login challenge is not a bank code');
 
   const acctStart = await call(user, 'POST', '/users/add-account', form(), GEO);
   await assert.rejects(
     userService.completeDeviceLogin(acctStart.json.challengeId, lastCode(), { headers: { 'user-agent': 'x' }, socket: { remoteAddress: '1.1.1.1' } }),
-    (e) => e.restartLogin === true
+    (e) => e.restartLogin === true || /6-digit/.test(e.message)
   );
 });
 
@@ -260,7 +272,7 @@ test('a burst of 40 simultaneous wrong guesses is capped at 5', async () => {
 
   await Promise.all(guesses.map((g) => call(user, 'POST', '/users/add-account', { ...form(), challengeId: first.json.challengeId, otp: g }, GEO)));
 
-  const [[row]] = await db.query('SELECT attempts FROM tbl_login_challenge WHERE user_id = ?', [user.id]);
+  const row = await otpRow(user.id);
   assert.strictEqual(row.attempts, 5);
   const late = await call(user, 'POST', '/users/add-account', { ...form(), challengeId: first.json.challengeId, otp: right }, GEO);
   assert.strictEqual(late.status, 400);
@@ -274,7 +286,7 @@ test('resend: too soon is 429, then a new code replaces the old one', async () =
 
   assert.strictEqual((await call(user, 'POST', '/account/otp/resend', { challengeId: first.json.challengeId }, GEO)).status, 429);
 
-  await db.query('UPDATE tbl_login_challenge SET last_sent_at = DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE user_id = ?', [user.id]);
+  await db.query('UPDATE otp_verified SET last_sent_at = DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE user_id = ?', [user.id]);
   const resent = await call(user, 'POST', '/account/otp/resend', { challengeId: first.json.challengeId }, GEO);
   assert.strictEqual(resent.status, 200);
   const newCode = lastCode();
@@ -292,7 +304,7 @@ test('resend: too soon is 429, then a new code replaces the old one', async () =
 test('add: an expired code is refused', async () => {
   const user = await makeUser();
   const first = await call(user, 'POST', '/users/add-account', form(), GEO);
-  await db.query('UPDATE tbl_login_challenge SET expires_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE user_id = ?', [user.id]);
+  await db.query('UPDATE otp_verified SET last_sent_at = DATE_SUB(NOW(), INTERVAL 11 MINUTE) WHERE user_id = ?', [user.id]);
   const res = await call(user, 'POST', '/users/add-account', { ...form(), challengeId: first.json.challengeId, otp: lastCode() }, GEO);
   assert.strictEqual(res.status, 400);
   assert.strictEqual(res.json.restartOtp, true);
@@ -305,7 +317,7 @@ test('add: junk input is refused cleanly and does not burn the real code', async
     const res = await call(user, 'POST', '/users/add-account', { ...form(), ...bad }, GEO);
     assert.ok(res.status >= 400 && res.status < 500, `status ${res.status}`);
   }
-  const [[row]] = await db.query('SELECT attempts FROM tbl_login_challenge WHERE user_id = ?', [user.id]);
+  const row = await otpRow(user.id);
   assert.strictEqual(row.attempts, 0);
   const ok = await call(user, 'POST', '/users/add-account', { ...form(), challengeId: first.json.challengeId, otp: lastCode() }, GEO);
   assert.strictEqual(ok.status, 200);
@@ -344,9 +356,9 @@ test('delete: first call sends a code and deletes nothing; the right code delete
 
   const rows = await waitFor(async () => {
     const r = await logRows(user.id);
-    return r.some((x) => x.step === 'completed') ? r : null;
+    return r.some((x) => /^bank account deleted/.test(x.details)) ? r : null;
   });
-  assert.ok(rows.some((r) => r.action === 'delete_account' && r.step === 'completed' && r.ac_id === extra));
+  assert.ok(rows.some((r) => new RegExp('^bank account deleted.*ac_id ' + extra + '$').test(r.details)));
 });
 
 test('set primary: first call sends a code and changes nothing; the right code changes it', async () => {
