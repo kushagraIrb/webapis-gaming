@@ -62,7 +62,7 @@ class UserService {
         const refreshToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' });
         await userModel.updateSessionToken(user.id, accessToken, refreshToken);
 
-        return { msg: 'Google login successful!', accessToken, refreshToken };
+        return { msg: 'Google login successful!', accessToken, refreshToken, userId: user.id };
     }
 
     static async googleRegister({ credential, phone }, ipAddress) {
@@ -395,7 +395,7 @@ class UserService {
         await userModel.updateSessionToken(LastUserID, accessToken, refreshToken);
 
         // return { msg: 'The user has been registered successfully!', userDetails: userDetails };
-        return { msg: 'The user has been registered successfully!', accessToken, refreshToken };
+        return { msg: 'The user has been registered successfully!', accessToken, refreshToken, userId: LastUserID };
     }
 
     // Fetch state name based on pincode
@@ -480,6 +480,7 @@ class UserService {
         }
         
         if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
+            req.authFailReason = 'account_blocked';
             const err = new Error('Your login Id is blocked, please contact the administrator.');
             err.statusCode = 403;
             throw err;
@@ -502,7 +503,7 @@ class UserService {
         // Update session token in the database
         await userModel.updateSessionToken(user.id, newAccessToken, newRefreshToken);
 
-        return { msg: 'Login successful!', newAccessToken, newRefreshToken };
+        return { msg: 'Login successful!', newAccessToken, newRefreshToken, userId: user.id };
     }
 
     // Validate user by phone
@@ -513,6 +514,7 @@ class UserService {
 
         // If the user doesn't exist, return null
         if (!user || user.length === 0) {
+            req.authFailReason = 'unknown_phone';
             return null;
         }
 
@@ -520,6 +522,7 @@ class UserService {
         // Check if the password is correct
         const validPassword = await bcrypt.compare(userData.password, storedPassword);
         if (!validPassword) {
+            req.authFailReason = 'wrong_password';
             return null; // Password is incorrect
         }
 

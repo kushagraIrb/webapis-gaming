@@ -3,6 +3,7 @@ const { validationResult } = require('express-validator');
 const userService = require('../services/userService');
 const liveBetService = require('../services/liveBetService');
 const requestIp = require('request-ip');
+const authLog = require('../models/authLogModel');
 const userModel = require('../models/userModel');
 
 class UserController {
@@ -163,7 +164,8 @@ class UserController {
             if (req.body.last_name) 
                 userData.last_name = req.body.last_name; // Include only if present
 
-            const { msg, accessToken, refreshToken } = await userService.registerUser(userData, clientIp4);
+            const { msg, accessToken, refreshToken, userId } = await userService.registerUser(userData, clientIp4);
+            authLog.record(req, { userId, eventType: 'signup', method: 'password' });
 
             // Set refresh token in an HTTP-only cookie
             res.cookie('refreshToken', refreshToken, {
@@ -191,7 +193,8 @@ class UserController {
     async googleRegister(req, res) {
         try {
             const clientIp = requestIp.getClientIp(req)?.replace(/^::ffff:/, '');
-            const { accessToken, refreshToken, msg } = await userService.googleRegister(req.body, clientIp);
+            const { accessToken, refreshToken, msg, userId } = await userService.googleRegister(req.body, clientIp);
+            authLog.record(req, { userId, eventType: 'signup', method: 'google' });
 
             res.cookie('refreshToken', refreshToken, {
                 secure: process.env.NODE_ENV === 'production',
@@ -211,7 +214,8 @@ class UserController {
 
     async googleLogin(req, res) {
         try {
-            const { accessToken, refreshToken, msg } = await userService.googleLogin(req.body);
+            const { accessToken, refreshToken, msg, userId } = await userService.googleLogin(req.body);
+            authLog.record(req, { userId, eventType: 'login', method: 'google' });
 
             res.cookie('refreshToken', refreshToken, {
                 secure: process.env.NODE_ENV === 'production',
@@ -222,6 +226,9 @@ class UserController {
             return res.status(200).send({ msg, accessToken });
         } catch (error) {
             const statusCode = error.statusCode || 500;
+            if (statusCode !== 500) {
+                authLog.recordFailure(req, { method: 'google', reason: error.message });
+            }
             if (statusCode === 500) {
                 logger.error(`Google login error: ${error.message}`, { stack: error.stack });
             }
@@ -275,8 +282,9 @@ class UserController {
             }
     
             // ✅ Service login
-            const { msg, newAccessToken, newRefreshToken } =
+            const { msg, newAccessToken, newRefreshToken, userId } =
                 await userService.loginUser(req, req.body);
+            authLog.record(req, { userId, eventType: 'login', method: 'password' });
     
             apiResponseMsg = msg;
             result = 1;
@@ -299,6 +307,11 @@ class UserController {
         } catch (error) {
             const statusCode = error.statusCode || 500;
             apiResponseMsg = error.message || 'Login failed';
+
+            // A refused login (wrong password, unknown phone, blocked account) goes in the activity log.
+            if (statusCode !== 500) {
+                authLog.recordFailure(req, { method: 'password', reason: req.authFailReason || apiResponseMsg, phone });
+            }
 
             // A failure to write the login log must never stop the response being sent.
             try {
