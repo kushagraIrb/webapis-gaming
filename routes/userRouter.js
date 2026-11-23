@@ -17,6 +17,8 @@ router.post('/check-name', userController.checkNameAvailability);
 router.get('/fetch-state', userController.fetchUserState);
 router.post('/register', limits.registerPerIp, limits.registerPerTarget, signUpValidation, userController.register);
 router.post('/login', limits.loginPerIp, limits.loginPerAccount, loginValidation, userController.login);
+router.post('/login/verify-otp', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.verifyLoginOtp);
+router.post('/login/resend-otp', limits.loginOtpPerIp, limits.loginOtpResend, userController.resendLoginOtp);
 router.post('/google/register', userController.googleRegister);
 router.post('/google/login', userController.googleLogin);
 router.post('/reset-link', limits.passwordReset, userController.resetLink);
