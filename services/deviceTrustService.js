@@ -107,11 +107,17 @@ class DeviceTrustService {
             throw expiredError();
         }
 
+        // The guess is counted first and atomically: checking the count and adding to it as two
+        // steps would let a burst of parallel requests try far more than OTP_MAX_ATTEMPTS codes.
+        const used = await trustedDeviceModel.reserveAttempt(challenge.id, OTP_MAX_ATTEMPTS);
+        if (used === null) {
+            throw expiredError();
+        }
+
         const expected = Buffer.from(challenge.otp_hash, 'hex');
         const given = Buffer.from(this.otpHash(challengeId, otp), 'hex');
         if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
-            await trustedDeviceModel.addAttempt(challenge.id);
-            const left = OTP_MAX_ATTEMPTS - (challenge.attempts + 1);
+            const left = OTP_MAX_ATTEMPTS - used;
             if (left <= 0) {
                 throw expiredError('Too many wrong codes. Please log in again.');
             }

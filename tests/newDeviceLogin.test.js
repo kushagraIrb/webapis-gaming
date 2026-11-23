@@ -153,6 +153,22 @@ test('wrong codes are counted and the fifth kills the challenge, even for the ri
   );
 });
 
+test('a burst of simultaneous wrong guesses is capped at 5 evaluations', async () => {
+  const user = await makeUser();
+  const first = await login(user, makeReq());
+  const right = lastCode();
+  const guesses = Array.from({ length: 40 }, (_, i) => String(300000 + i * 7)).filter((g) => g !== right);
+
+  const outcomes = await Promise.all(guesses.map((g) =>
+    userService.completeDeviceLogin(first.challengeId, g, makeReq()).then(() => 'ok', (e) => (/Incorrect code/.test(e.message) ? 'evaluated' : 'rejected'))
+  ));
+
+  assert.ok(outcomes.filter((o) => o === 'evaluated').length <= 4, 'at most 4 "incorrect" answers plus the final kill');
+  const [[row]] = await db.query('SELECT attempts FROM tbl_login_challenge WHERE user_id = ?', [user.id]);
+  assert.strictEqual(row.attempts, 5, 'exactly 5 guesses were counted, never more');
+  await assert.rejects(userService.completeDeviceLogin(first.challengeId, right, makeReq()), (e) => e.restartLogin === true);
+});
+
 test('an expired challenge is refused', async () => {
   const user = await makeUser();
   const first = await login(user, makeReq());
