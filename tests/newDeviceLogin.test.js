@@ -100,6 +100,30 @@ test('new device: no session is issued, the old session survives, a 6-digit code
   assert.ok(!result.maskedEmail.includes('devicetest'), 'the email is masked');
 });
 
+test('login emails show only the IP address and a short browser name', async () => {
+  const user = await makeUser();
+  const chrome = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0';
+  const req = makeReq(undefined, '203.0.113.50');
+  req.headers['user-agent'] = chrome;
+
+  const first = await login(user, req);
+  const codeMail = sent[sent.length - 1].html;
+  assert.ok(codeMail.includes('IP address: 203.0.113.50') && codeMail.includes('Browser: Edge on Windows'), 'code email: IP and short browser name');
+  assert.ok(!codeMail.includes('Mozilla') && !codeMail.includes('AppleWebKit'), 'no raw browser text in the code email');
+
+  await userService.completeDeviceLogin(first.challengeId, lastCode(), req);
+  let alert;
+  for (let i = 0; i < 60 && !alert; i++) {
+    alert = sent.find((m) => /New device login/.test(m.subject));
+    if (!alert) await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.ok(alert, 'the alert email is sent');
+  assert.ok(alert.html.includes('IP address: 203.0.113.50') && alert.html.includes('Browser: Edge on Windows'), 'alert email: IP and short browser name');
+  assert.ok(!alert.html.includes('Mozilla'), 'no raw browser text in the alert email');
+  const [[stored]] = await db.query('SELECT browser FROM tbl_login_challenge WHERE user_id = ? ORDER BY id DESC LIMIT 1', [user.id]);
+  assert.strictEqual(stored.browser, chrome, 'the full browser text is still stored in the table');
+});
+
 test('correct code: session issued, device trusted, next login skips the OTP, code is single use', async () => {
   const user = await makeUser();
   const first = await login(user, makeReq());
