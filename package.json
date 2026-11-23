@@ -10,7 +10,6 @@
   "author": "KUSHAGRA",
   "license": "ISC",
   "dependencies": {
-    "@maxmind/geoip2-node": "^7.1.0",
     "@socket.io/cluster-adapter": "^0.2.2",
     "axios": "^1.10.0",
     "bcrypt": "^5.1.1",
