@@ -103,7 +103,10 @@ class DeviceTrustService {
         }
 
         const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
-        if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS) {
+        // A code issued for a bank account change must never log anyone in (purpose column is
+        // missing until sql/20261125-account-otp-challenge-columns.sql runs: that means 'login').
+        if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
+            || (challenge.purpose || 'login') !== 'login') {
             throw expiredError();
         }
 
@@ -148,7 +151,7 @@ class DeviceTrustService {
         }
 
         const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
-        if (!challenge || challenge.used_at || !challenge.is_live) {
+        if (!challenge || challenge.used_at || !challenge.is_live || (challenge.purpose || 'login') !== 'login') {
             throw expiredError();
         }
         if (challenge.resend_count >= OTP_MAX_RESENDS) {
@@ -240,5 +243,11 @@ class DeviceTrustService {
             .catch((error) => logger.error(`New device alert email could not be sent: ${error.message}`));
     }
 }
+
+// Shared with the bank account OTP (services/accountOtpService.js) so both use the same rules.
+DeviceTrustService.shared = {
+    OTP_VALID_MINUTES, OTP_MAX_ATTEMPTS, OTP_MAX_RESENDS, RESEND_GAP_SECONDS, HEX_64,
+    sha256, escapeHtml, fail,
+};
 
 module.exports = DeviceTrustService;
