@@ -376,7 +376,8 @@ class UserController {
     async verifyLoginOtp(req, res) {
         try {
             const { challengeId, otp } = req.body || {};
-            const { msg, accessToken, refreshToken, deviceId } = await userService.completeDeviceLogin(challengeId, otp, req);
+            const { msg, accessToken, refreshToken, deviceId, userId, method } = await userService.completeDeviceLogin(challengeId, otp, req);
+            authLog.record(req, { userId, eventType: 'login', method: method === 'google' ? 'google' : 'otp' });
 
             res.cookie('refreshToken', refreshToken, {
                 secure: process.env.NODE_ENV === 'production',
@@ -388,6 +389,10 @@ class UserController {
             return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId });
         } catch (error) {
             const statusCode = error.statusCode || 500;
+
+            if (statusCode !== 500 && error.userId) {
+                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
+            }
 
             if (statusCode === 500) {
                 logger.error(`Error verifying login OTP: ${error.message}`, { stack: error.stack });
