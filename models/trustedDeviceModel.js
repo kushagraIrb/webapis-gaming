@@ -60,8 +60,16 @@ class TrustedDeviceModel {
         return rows[0] || null;
     }
 
-    static async addAttempt(id) {
-        await db.promise().query('UPDATE tbl_login_challenge SET attempts = attempts + 1 WHERE id = ?', [id]);
+    // Takes one guess out of the allowance BEFORE the code is compared, in a single statement, so a
+    // burst of simultaneous guesses cannot all slip past the limit. Returns the number of guesses
+    // used including this one, or null when the challenge is spent, expired or out of guesses.
+    static async reserveAttempt(id, maxAttempts) {
+        const [result] = await db.promise().query(
+            `UPDATE tbl_login_challenge SET attempts = LAST_INSERT_ID(attempts + 1)
+             WHERE id = ? AND attempts < ? AND used_at IS NULL AND expires_at > NOW()`,
+            [id, maxAttempts]
+        );
+        return result.affectedRows === 1 ? result.insertId : null;
     }
 
     // True only for the one caller that actually spends the challenge, so a code works once.
