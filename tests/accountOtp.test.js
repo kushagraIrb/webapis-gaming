@@ -311,9 +311,7 @@ test('add: junk input is refused cleanly and does not burn the real code', async
   assert.strictEqual(ok.status, 200);
 });
 
-// Skipped while the one-account rule is switched off in models/userModel.js for testing on dev.
-// Re-enable (test.skip -> test) when SINGLE_ACCOUNT_ONLY is put back to true.
-test.skip('add: a user who already has an account is refused before any code is sent', async () => {
+test('add: a user who already has an account is refused before any code is sent', async () => {
   const user = await makeUser();
   await giveAccount(user.id);
   const res = await call(user, 'POST', '/users/add-account', form(), GEO);
