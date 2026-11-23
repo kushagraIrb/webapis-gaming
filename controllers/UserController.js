@@ -254,6 +254,9 @@ class UserController {
             return res.status(200).send({ msg, accessToken });
         } catch (error) {
             const statusCode = error.statusCode || 500;
+            if (statusCode !== 500) {
+                authLog.recordFailure(req, { method: 'google', reason: error.message });
+            }
             if (statusCode === 500) {
                 logger.error(`Google login error: ${error.message}`, { stack: error.stack });
             }
@@ -344,6 +347,11 @@ class UserController {
             const statusCode = error.statusCode || 500;
             apiResponseMsg = error.message || 'Login failed';
 
+            // A refused login (wrong password, unknown phone, blocked account) goes in the activity log.
+            if (statusCode !== 500) {
+                authLog.recordFailure(req, { method: 'password', reason: req.authFailReason || apiResponseMsg, phone });
+            }
+
             // A failure to write the login log must never stop the response being sent.
             try {
                 await userModel.insertinLog({
@@ -380,6 +388,10 @@ class UserController {
             return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId });
         } catch (error) {
             const statusCode = error.statusCode || 500;
+
+            if (statusCode !== 500 && error.userId) {
+                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
+            }
 
             if (statusCode === 500) {
                 logger.error(`Error verifying login OTP: ${error.message}`, { stack: error.stack });

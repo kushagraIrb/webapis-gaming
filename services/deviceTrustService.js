@@ -119,9 +119,9 @@ class DeviceTrustService {
         if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
             const left = OTP_MAX_ATTEMPTS - used;
             if (left <= 0) {
-                throw expiredError('Too many wrong codes. Please log in again.');
+                throw Object.assign(expiredError('Too many wrong codes. Please log in again.'), { userId: challenge.user_id });
             }
-            throw fail(`Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.`, 400);
+            throw fail(`Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.`, 400, { userId: challenge.user_id });
         }
 
         if (!(await trustedDeviceModel.consume(challenge.id))) {

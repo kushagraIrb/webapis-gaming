@@ -507,6 +507,7 @@ class UserService {
         }
         
         if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
+            req.authFailReason = 'account_blocked';
             const err = new Error('Your login Id is blocked, please contact the administrator.');
             err.statusCode = 403;
             throw err;
@@ -546,6 +547,7 @@ class UserService {
 
         // If the user doesn't exist, return null
         if (!user || user.length === 0) {
+            req.authFailReason = 'unknown_phone';
             return null;
         }
 
@@ -553,6 +555,7 @@ class UserService {
         // Check if the password is correct
         const validPassword = await bcrypt.compare(userData.password, storedPassword);
         if (!validPassword) {
+            req.authFailReason = 'wrong_password';
             return null; // Password is incorrect
         }
 
