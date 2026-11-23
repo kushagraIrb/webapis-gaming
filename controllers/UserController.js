@@ -5,6 +5,17 @@ const liveBetService = require('../services/liveBetService');
 const requestIp = require('request-ip');
 const authLog = require('../models/authLogModel');
 const userModel = require('../models/userModel');
+const DeviceTrust = require('../services/deviceTrustService');
+
+// Registration must not fail after the account exists, so a problem here is only logged.
+async function trustRegisteringDevice(userId, req) {
+    try {
+        return userId ? await DeviceTrust.trustNewDevice(userId, req) : null;
+    } catch (error) {
+        logger.error(`Could not trust the registering device for user ${userId}: ${error.message}`);
+        return null;
+    }
+}
 
 class UserController {
     // Fetch user details based on jwt token
@@ -175,9 +186,12 @@ class UserController {
                 sameSite: 'Strict',
                 maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
             });
-    
+
+            // The browser that just registered is trusted, so the first login on it does not ask for an OTP.
+            const deviceId = await trustRegisteringDevice(userId, req);
+
             // Send response back to the client
-            return res.status(200).send({ msg, accessToken });
+            return res.status(200).send({ msg, accessToken, ...(deviceId && { deviceId }) });
         } catch (error) {
             const statusCode = error.statusCode || 500;
 
@@ -203,7 +217,9 @@ class UserController {
                 maxAge: 30 * 24 * 60 * 60 * 1000
             });
 
-            return res.status(200).send({ msg, accessToken });
+            const deviceId = await trustRegisteringDevice(userId, req);
+
+            return res.status(200).send({ msg, accessToken, ...(deviceId && { deviceId }) });
         } catch (error) {
             const statusCode = error.statusCode || 500;
             if (statusCode === 500) {
@@ -215,7 +231,19 @@ class UserController {
 
     async googleLogin(req, res) {
         try {
-            const { accessToken, refreshToken, msg, userId } = await userService.googleLogin(req.body);
+            const googleResult = await userService.googleLogin(req.body, req);
+
+            // New browser or device: the Google account was right, but the session waits for the email OTP.
+            if (googleResult.otpRequired) {
+                return res.status(202).json({
+                    otpRequired: true,
+                    challengeId: googleResult.challengeId,
+                    email: googleResult.maskedEmail,
+                    msg: `We sent a verification code to ${googleResult.maskedEmail}.`
+                });
+            }
+
+            const { accessToken, refreshToken, msg, userId } = googleResult;
             authLog.record(req, { userId, eventType: 'login', method: 'google' });
 
             res.cookie('refreshToken', refreshToken, {
@@ -283,10 +311,21 @@ class UserController {
             }
     
             // ✅ Service login
-            const { msg, newAccessToken, newRefreshToken, userId } =
-                await userService.loginUser(req, req.body);
+            const loginResult = await userService.loginUser(req, req.body);
+
+            // New browser or device: the password was right, but the session waits for the email OTP.
+            if (loginResult.otpRequired) {
+                return res.status(202).json({
+                    otpRequired: true,
+                    challengeId: loginResult.challengeId,
+                    email: loginResult.maskedEmail,
+                    msg: `We sent a verification code to ${loginResult.maskedEmail}.`
+                });
+            }
+
+            const { msg, newAccessToken, newRefreshToken, userId } = loginResult;
             authLog.record(req, { userId, eventType: 'login', method: 'password' });
-    
+
             apiResponseMsg = msg;
             result = 1;
     
@@ -333,6 +372,59 @@ class UserController {
         }
     }
 
+    // Second step of a new-device login: the emailed code turns the pending login into a session.
+    async verifyLoginOtp(req, res) {
+        try {
+            const { challengeId, otp } = req.body || {};
+            const { msg, accessToken, refreshToken, deviceId, userId, method } = await userService.completeDeviceLogin(challengeId, otp, req);
+            authLog.record(req, { userId, eventType: 'login', method: method === 'google' ? 'google' : 'otp' });
+
+            res.cookie('refreshToken', refreshToken, {
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 30 * 24 * 60 * 60 * 1000
+            });
+
+            // newAccessToken is what the password login screen reads; accessToken is what Google login reads.
+            return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId });
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode !== 500 && error.userId) {
+                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
+            }
+
+            if (statusCode === 500) {
+                logger.error(`Error verifying login OTP: ${error.message}`, { stack: error.stack });
+            }
+
+            return res.status(statusCode).send({
+                msg: statusCode === 500 ? 'Something went wrong' : error.message,
+                ...(error.restartLogin && { restartLogin: true })
+            });
+        }
+    }
+
+    async resendLoginOtp(req, res) {
+        try {
+            const { challengeId } = req.body || {};
+            const { maskedEmail } = await userService.resendLoginOtp(challengeId);
+
+            return res.status(200).send({ msg: `We sent a new verification code to ${maskedEmail}.`, email: maskedEmail });
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+
+            if (statusCode === 500) {
+                logger.error(`Error resending login OTP: ${error.message}`, { stack: error.stack });
+            }
+
+            return res.status(statusCode).send({
+                msg: statusCode === 500 ? 'Something went wrong' : error.message,
+                ...(error.restartLogin && { restartLogin: true })
+            });
+        }
+    }
+
     async changePassword(req, res) {
         try {
             const errors = validationResult(req);
@@ -344,7 +436,7 @@ class UserController {
             const { password } = req.body;
             const user_id  = req.user_id;
 
-            const response = await userService.changeUserPassword(password, user_id);
+            const response = await userService.changeUserPassword(password, user_id, req);
 
             return res.status(200).send({ msg: 'Password updated successfully', response });
         } catch (error) {

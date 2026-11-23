@@ -33,6 +33,11 @@ module.exports = {
     loginPerAccount: make({ windowMinutes: 15, max: 10, key: (req) => `login:${clientIp(req)}:${field(req.body && req.body.phone)}` }),
     // One IP across all accounts: 200 per 15 minutes.
     loginPerIp: make({ windowMinutes: 15, max: 200, key: (req) => `login-ip:${clientIp(req)}` }),
+    // New-device login OTP. Wrong guesses are also capped per code in the database (5), which is
+    // the real limit because these counters are per worker.
+    loginOtpPerChallenge: make({ windowMinutes: 15, max: 10, key: (req) => `login-otp:${clientIp(req)}:${field(req.body && req.body.challengeId).slice(0, 16)}`, message: 'Too many attempts. Please log in again.' }),
+    loginOtpPerIp: make({ windowMinutes: 15, max: 100, key: (req) => `login-otp-ip:${clientIp(req)}` }),
+    loginOtpResend: make({ windowMinutes: 15, max: 10, key: (req) => `login-otp-resend:${clientIp(req)}`, message: 'Too many codes requested. Please wait a while and try again.' }),
     // Sending OTP emails: 5 per 15 minutes per email address, 30 per IP.
     otpPerTarget: make({ windowMinutes: 15, max: 5, key: (req) => `otp:${clientIp(req)}:${field(req.body && req.body.email)}`, message: 'Too many verification codes requested. Please wait and try again.' }),
     otpPerIp: make({ windowMinutes: 15, max: 30, key: (req) => `otp-ip:${clientIp(req)}` }),

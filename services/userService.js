@@ -1,4 +1,5 @@
 const otpService = require('./otpService');
+const DeviceTrust = require('./deviceTrustService');
 const userModel = require('../models/userModel');
 
 const db = require('../config/database');
@@ -51,18 +52,44 @@ class UserService {
         return googleUser;
     }
 
-    static async issueGoogleSession(user) {
+    // Pass `req` for a login: an unrecognised device then gets a pending OTP check instead of a
+    // session. Registration passes nothing (the new account's own device is trusted by the caller).
+    static async issueGoogleSession(user, req) {
         if (user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
             const err = new Error('Your login Id is blocked, please contact the administrator.');
             err.statusCode = 403;
             throw err;
         }
 
-        const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' });
-        const refreshToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' });
-        await userModel.updateSessionToken(user.id, accessToken, refreshToken);
+        if (req) {
+            const gate = await DeviceTrust.gate(user, req, 'google');
+            if (!gate.trusted) {
+                return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail };
+            }
+        }
+
+        const { accessToken, refreshToken } = await this.issueSession(user.id);
 
         return { msg: 'Google login successful!', accessToken, refreshToken, userId: user.id };
+    }
+
+    static async issueSession(userId) {
+        const accessToken = jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '30d' });
+        const refreshToken = jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '30d' });
+        await userModel.updateSessionToken(userId, accessToken, refreshToken);
+        return { accessToken, refreshToken };
+    }
+
+    // Second step of a new-device login: the emailed code turns the pending login into a session.
+    static async completeDeviceLogin(challengeId, otp, req) {
+        const { user, deviceId, method } = await DeviceTrust.verify(challengeId, otp, req);
+        const { accessToken, refreshToken } = await this.issueSession(user.id);
+        const msg = method === 'google' ? 'Google login successful!' : 'Login successful!';
+        return { msg, accessToken, refreshToken, deviceId, userId: user.id, method };
+    }
+
+    static async resendLoginOtp(challengeId) {
+        return DeviceTrust.resend(challengeId);
     }
 
     static async googleRegister({ credential, phone }, ipAddress) {
@@ -106,7 +133,7 @@ class UserService {
         return this.issueGoogleSession({ id: newUser.insertId, status: 1, ip_status: 1, is_verified: 1 });
     }
 
-    static async googleLogin({ credential }) {
+    static async googleLogin({ credential }, req) {
         const googleUser = await this.verifyGoogleCredential(credential);
         const user = await userModel.findUserByGoogleId(googleUser.sub);
         if (!user) {
@@ -115,7 +142,7 @@ class UserService {
             throw err;
         }
 
-        return this.issueGoogleSession(user);
+        return this.issueGoogleSession(user, req);
     }
 
     // Fetch user details based on jwt token
@@ -486,6 +513,12 @@ class UserService {
             throw err;
         }
 
+        // A browser this account has not passed the email OTP on gets no session yet.
+        const gate = await DeviceTrust.gate(user, req, 'password');
+        if (!gate.trusted) {
+            return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail };
+        }
+
         // Generate a new access token
         const newAccessToken = jwt.sign(
             { id: user.id },
@@ -576,7 +609,7 @@ class UserService {
         }
     }
 
-    static async changeUserPassword(password, userId) {
+    static async changeUserPassword(password, userId, req) {
         try {
             const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -586,6 +619,11 @@ class UserService {
                 const err = new Error('Password update failed. User not found.');
                 err.statusCode = 404;
                 throw err;
+            }
+
+            // The browser the user changed it on stays trusted; every other one must pass the OTP again.
+            if (req) {
+                await DeviceTrust.clearOthersForUser(userId, req);
             }
 
             return { status: 'Password updated successfully' };
@@ -745,6 +783,9 @@ class UserService {
                 return { success: false, msg: 'Password update failed. Please try again.' };
             }
 
+            // A reset means the old password may be known to someone else: no device stays trusted.
+            await DeviceTrust.clearAllForUser(user[0].id);
+
             return { success: true };
         } catch (error) {
             return { success: false, msg: 'Error updating password: ' + error.message };
@@ -778,7 +819,16 @@ class UserService {
             // Return the new access token
             return { accessToken: newAccessToken };
         } catch (err) {
-            throw new Error('Invalid refresh token.');
+            // A bad, expired, replaced or cleared (force logout) refresh token is the caller's
+            // problem: 401, not a server error. Anything else (for example the database being
+            // down) keeps the generic message and stays a 500 so it is still logged.
+            const rejected = err.statusCode === 401
+                || ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(err.name);
+            const failure = new Error('Invalid refresh token.');
+            if (rejected) {
+                failure.statusCode = 401;
+            }
+            throw failure;
         }
     }
 
