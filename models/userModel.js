@@ -467,6 +467,17 @@ class UserModel {
         return result;
     }
 
+    // Read-only version of the SINGLE_ACCOUNT_ONLY rule, so a bank account OTP is not sent for an
+    // account that addAccount below would refuse. addAccount still makes the real, atomic check.
+    static async isAddAccountBlocked(userId) {
+        if (!SINGLE_ACCOUNT_ONLY) return false;
+        const [rows] = await db.promise().query(
+            'SELECT 1 FROM tbl_user_account WHERE user_id = ? AND is_soft_deleted = 0 LIMIT 1',
+            [userId]
+        );
+        return rows.length > 0;
+    }
+
     static async addAccount(userId, accountData) {
         // TEMPORARY: while SINGLE_ACCOUNT_ONLY is true, a user who already has an account
         // cannot add another. The check and the insert are one statement, so two quick
