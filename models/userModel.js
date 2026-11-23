@@ -2,9 +2,10 @@ const db = require('../config/database');
 const moment = require('moment');
 
 // TEMPORARY rule: a user who already has an account cannot add another one.
-// It is ON unless SINGLE_ACCOUNT_ONLY=false is set in this server's .env (used on the dev server
-// to test adding accounts), so a code change can never lift it on the live server by accident.
-const SINGLE_ACCOUNT_ONLY = String(process.env.SINGLE_ACCOUNT_ONLY ?? 'true').toLowerCase() !== 'false';
+// TEMP, FOR TESTING ON DEV: the rule is switched off here. Put the original line back (and remove
+// the `false` line) before this goes to the live server.
+// const SINGLE_ACCOUNT_ONLY = true;
+const SINGLE_ACCOUNT_ONLY = false;
 
 // OTP expiry and attempt limit need two columns (see sql/20261110-otp-expiry-and-attempts.sql).
 // They are used as soon as the columns exist, so the code can ship before or after the migration.

@@ -1,6 +1,6 @@
-// With SINGLE_ACCOUNT_ONLY=false (set on the dev server to test adding accounts) a user who
-// already has an account can add another one, and the bank account OTP covers it.
-// tests/accountOtp.test.js covers the default (rule on) behaviour.
+// While the one-account rule is switched off (SINGLE_ACCOUNT_ONLY = false in models/userModel.js,
+// for testing on dev) a user who already has an account can add another one, and the bank account
+// OTP covers it. Re-check or remove this file when the rule is put back.
 //
 // Run with:  node --test tests/accountOtpSecondAccount.test.js
 // Needs the LOCAL gaming_rewamp database with the login OTP and account OTP SQL files applied.
@@ -12,7 +12,6 @@ const assert = require('node:assert');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 process.env.RATE_LIMIT_DISABLED = 'true';
-process.env.SINGLE_ACCOUNT_ONLY = 'false'; // read when models/userModel.js loads, so set before any require of it
 
 const sent = [];
 const sendMailPath = require.resolve('../helpers/sendMail');
