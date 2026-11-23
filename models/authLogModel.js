@@ -2,6 +2,7 @@ const moment = require('moment-timezone');
 const db = require('../config/database');
 const { logger } = require('../logger');
 const { clientIp, clientGeo, clientBrowser } = require('../helpers/clientInfo');
+const { lookupGeo } = require('../helpers/geoip');
 
 // Table from sql/20261123-auth-activity-log.sql plus sql/20261124-auth-activity-log-failed-logins.sql.
 // The app keeps working while either file has not been run yet: the log is just skipped.
@@ -49,6 +50,21 @@ class AuthLogModel {
             const geo = clientGeo(req);
             let state = geo.state;
             let stateSource = state ? 'cloudflare' : null;
+            let city = geo.city;
+            let country = geo.country;
+
+            // Cloudflare is missing something: ask the local MaxMind GeoLite2 file, filling only the gaps.
+            if (!state || !city || !country) {
+                const mm = await lookupGeo(clientIp(req));
+                if (mm) {
+                    country = country || mm.country;
+                    city = city || mm.city;
+                    if (!state && mm.state) {
+                        state = mm.state;
+                        stateSource = 'maxmind';
+                    }
+                }
+            }
             let uid = userId;
             const phoneText = phone ? String(phone).trim().slice(0, 20) : null;
 
@@ -83,10 +99,10 @@ class AuthLogModel {
                     method,
                     details ? String(details).slice(0, 255) : null,
                     clientIp(req),
-                    geo.country,
+                    country,
                     state,
                     stateSource,
-                    geo.city,
+                    city,
                     clientBrowser(req),
                     moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
                 ]
