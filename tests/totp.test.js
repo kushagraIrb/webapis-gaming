@@ -46,7 +46,6 @@ test.after(async () => {
 
 test.beforeEach(() => {
   process.env.NEW_DEVICE_OTP_ENABLED = 'true';
-  delete process.env.NEW_DEVICE_EMAIL_OTP_ENABLED;
   sent.length = 0;
 });
 
@@ -236,102 +235,30 @@ test('Authenticator is not used when the new-device check itself is off', async 
   assert.ok(result.newAccessToken);
 });
 
-// ---- email code switched off: Authenticator only, set up at login ----------------------------
-
-const emailOff = () => { process.env.NEW_DEVICE_EMAIL_OTP_ENABLED = 'false'; };
-
-test('email code off: a user without Authenticator must set it up; nothing is emailed, no session yet', async () => {
-  emailOff();
+test('turning Authenticator on or off emails the owner', async () => {
   const user = await makeUser();
-  await db.query("UPDATE tbl_registration SET session_token = 'existing-session' WHERE id = ?", [user.id]);
-
-  const result = await login(user, makeReq());
-  assert.strictEqual(result.otpRequired, true);
-  assert.strictEqual(result.method, 'totp_setup');
-  assert.strictEqual(result.newAccessToken, undefined);
-  assert.strictEqual(sent.length, 0, 'no code is emailed');
-  const [[row]] = await db.query('SELECT session_token FROM tbl_registration WHERE id = ?', [user.id]);
-  assert.strictEqual(row.session_token, 'existing-session');
+  const [owner] = await db.query('SELECT * FROM tbl_registration WHERE id = ?', [user.id]);
+  DeviceTrust.sendAuthenticatorAlert(owner[0], makeReq(), 'on');
+  DeviceTrust.sendAuthenticatorAlert(owner[0], makeReq(), 'off');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(sent.some((m) => /turned on/.test(m.subject)));
+  assert.ok(sent.some((m) => /turned off/.test(m.subject)));
 });
 
-test('email code off: setup at login finishes the login, turns Authenticator on and trusts the browser', async () => {
-  emailOff();
+test('email code stays until Authenticator is on: no setup step at login, the emailed code logs in', async () => {
   const user = await makeUser();
   const first = await login(user, makeReq());
-
-  const { secret, qr } = await userService.beginLoginTotpSetup(first.challengeId);
-  assert.ok(qr.startsWith("data:image/png;base64,"));
-  assert.strictEqual((await Totp.status(user.id)).enabled, false, 'not on until a correct code');
-
-  const done = await userService.completeLoginTotpSetup(first.challengeId, appCode(secret, 0), makeReq());
-  assert.ok(done.accessToken);
-  assert.strictEqual(done.backupCodes.length, 8);
-  assert.match(done.deviceId, /^[a-f0-9]{64}$/);
-  assert.deepStrictEqual(await Totp.status(user.id), { enabled: true, backupCodesLeft: 8 });
-
-  const again = await login(user, makeReq(done.deviceId));
-  assert.ok(again.newAccessToken, 'the trusted browser logs in directly');
-
-  const other = await login(user, makeReq());
-  assert.strictEqual(other.method, 'totp', 'another browser now needs the app code');
+  assert.strictEqual(first.method, 'email');
+  const code = sent[sent.length - 1].html.match(/letter-spacing: 8px[^>]*>(\d{6})</)[1];
+  const done = await userService.completeDeviceLogin(first.challengeId, code, makeReq());
+  assert.ok(done.accessToken, 'a session is issued straight away');
+  assert.strictEqual(done.setupRequired, undefined);
 });
 
-test('email code off: wrong setup codes are counted, the fifth ends the challenge', async () => {
-  emailOff();
-  const user = await makeUser();
-  const first = await login(user, makeReq());
-  const { secret } = await userService.beginLoginTotpSetup(first.challengeId);
-  const right = appCode(secret, 0);
-  const wrong = right === '123456' ? '654321' : '123456';
-
-  for (let i = 0; i < 4; i++) {
-    await assert.rejects(userService.completeLoginTotpSetup(first.challengeId, wrong, makeReq()), (e) => e.statusCode === 400 && !e.restartLogin);
-  }
-  await assert.rejects(userService.completeLoginTotpSetup(first.challengeId, wrong, makeReq()), (e) => e.restartLogin === true);
-  await assert.rejects(userService.completeLoginTotpSetup(first.challengeId, right, makeReq()), (e) => e.restartLogin === true);
-  assert.strictEqual((await Totp.status(user.id)).enabled, false);
-});
-
-test('email code off: a setup challenge cannot be used through the normal code step, resend or twice', async () => {
-  emailOff();
-  const user = await makeUser();
-  const first = await login(user, makeReq());
-  const { secret } = await userService.beginLoginTotpSetup(first.challengeId);
-  const code = appCode(secret, 0);
-
-  await assert.rejects(userService.completeDeviceLogin(first.challengeId, code, makeReq()), (e) => e.restartLogin === true);
-  await assert.rejects(userService.resendLoginOtp(first.challengeId), (e) => e.statusCode === 400);
-
-  await userService.completeLoginTotpSetup(first.challengeId, code, makeReq());
-  await assert.rejects(userService.completeLoginTotpSetup(first.challengeId, code, makeReq()), (e) => e.restartLogin === true);
-  await assert.rejects(userService.beginLoginTotpSetup(first.challengeId), (e) => e.restartLogin === true);
-});
-
-test('setup endpoints refuse a normal login challenge, a made-up id and a bank-account challenge', async () => {
-  const user = await makeUser();
-  const normal = await login(user, makeReq()); // email code on (default): an emailed-code challenge
-  await assert.rejects(userService.beginLoginTotpSetup(normal.challengeId), (e) => e.restartLogin === true);
-  await assert.rejects(userService.completeLoginTotpSetup(normal.challengeId, '123456', makeReq()), (e) => e.restartLogin === true);
-  await assert.rejects(userService.beginLoginTotpSetup('f'.repeat(64)), (e) => e.restartLogin === true);
-  await assert.rejects(userService.beginLoginTotpSetup('nope'), (e) => e.restartLogin === true);
-});
-
-test('email code off: a user who already has Authenticator is asked for the app code, not for setup', async () => {
-  emailOff();
-  const user = await makeUser();
-  await enrol(user);
-  const result = await login(user, makeReq());
-  assert.strictEqual(result.method, 'totp');
-});
-
-test('email code off: a trusted browser still logs in without any step', async () => {
-  emailOff();
-  const user = await makeUser();
-  const first = await login(user, makeReq());
-  const { secret } = await userService.beginLoginTotpSetup(first.challengeId);
-  const { deviceId } = await userService.completeLoginTotpSetup(first.challengeId, appCode(secret, 0), makeReq());
-  sent.length = 0;
-  const again = await login(user, makeReq(deviceId));
-  assert.ok(again.newAccessToken);
-  assert.strictEqual(sent.length, 0);
+test('masked email shows the first letter and the last three letters of the name', () => {
+  assert.strictEqual(DeviceTrust.maskEmail('saket@gmail.com'), 's*ket@gmail.com');
+  assert.strictEqual(DeviceTrust.maskEmail('sakets@gmail.com'), 's**ets@gmail.com');
+  assert.strictEqual(DeviceTrust.maskEmail('abc@x.com'), 'a**@x.com', 'a short name is not shown almost whole');
+  assert.strictEqual(DeviceTrust.maskEmail('averylongemailname@x.com'), 'a******ame@x.com', 'the stars do not give away the length');
+  assert.strictEqual(DeviceTrust.maskEmail('nodomain'), '***');
 });

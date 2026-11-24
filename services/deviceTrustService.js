@@ -40,13 +40,6 @@ class DeviceTrustService {
         return String(process.env.NEW_DEVICE_OTP_ENABLED || '').toLowerCase() === 'true';
     }
 
-    // NEW_DEVICE_EMAIL_OTP_ENABLED=false turns the emailed code off for new-device logins: only
-    // Google Authenticator is used, and a user without it is made to set it up. Unset or anything
-    // else keeps the emailed code for users who have not turned Authenticator on.
-    static isEmailCodeEnabled() {
-        return String(process.env.NEW_DEVICE_EMAIL_OTP_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
-    }
-
     static requestContext(req) {
         return {
             ip: (requestIp.getClientIp(req) || '').replace(/^::ffff:/, '').slice(0, 45),
@@ -60,10 +53,16 @@ class DeviceTrustService {
         return HEX_64.test(raw) ? sha256(raw) : null;
     }
 
+    // First letter and last three letters of the name stay visible: saket@gmail.com -> s*ket@gmail.com.
+    // A name of four letters or fewer would be shown almost whole that way, so it keeps only its
+    // first letter (abc@x.com -> a**@x.com).
     static maskEmail(email) {
         const [name, domain] = String(email).split('@');
         if (!domain) return '***';
-        return `${name.slice(0, 1)}${'*'.repeat(Math.max(2, Math.min(name.length - 1, 6)))}@${domain}`;
+        if (name.length <= 4) {
+            return `${name.slice(0, 1)}${'*'.repeat(Math.max(2, name.length - 1))}@${domain}`;
+        }
+        return `${name.slice(0, 1)}${'*'.repeat(Math.min(name.length - 4, 6))}${name.slice(-3)}@${domain}`;
     }
 
     static otpHash(challengeId, otp) {
@@ -101,17 +100,16 @@ class DeviceTrustService {
         }
 
         const email = String(user.email || '').trim();
+        if (!email) {
+            throw fail('We could not find an email on your account to verify this device. Please contact support.', 403);
+        }
+
         const challengeId = crypto.randomBytes(32).toString('hex');
         const otp = String(crypto.randomInt(100000, 1000000));
         const ctx = this.requestContext(req);
-        const maskedEmail = email ? this.maskEmail(email) : '';
 
         // A user with Google Authenticator turned on enters the code from the app: nothing is mailed.
-        // With the email code switched off, a user who has not set it up yet must set it up now
-        // ('totp_setup'): no session is issued until they have entered a first correct code.
-        const hasTotp = await totpModel.isEnabled(user.id);
-        if (hasTotp || !this.isEmailCodeEnabled()) {
-            const secondFactor = hasTotp ? 'totp' : 'totp_setup';
+        if (await totpModel.isEnabled(user.id)) {
             await trustedDeviceModel.createChallenge({
                 challengeHash: sha256(challengeId),
                 userId: user.id,
@@ -120,13 +118,9 @@ class DeviceTrustService {
                 ipAddress: ctx.ip,
                 browser: ctx.browser,
                 validMinutes: OTP_VALID_MINUTES,
-                secondFactor,
+                secondFactor: 'totp',
             });
-            return { trusted: false, challengeId, maskedEmail, method: secondFactor };
-        }
-
-        if (!email) {
-            throw fail('We could not find an email on your account to verify this device. Please contact support.', 403);
+            return { trusted: false, challengeId, maskedEmail: this.maskEmail(email), method: 'totp' };
         }
 
         await trustedDeviceModel.createChallenge({
@@ -157,8 +151,7 @@ class DeviceTrustService {
         // missing until sql/20261125-account-otp-challenge-columns.sql runs: that means 'login').
         if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
             || (challenge.purpose || 'login') !== 'login'
-            || challenge.second_factor === 'totp_setup' // a setup challenge is finished by completeTotpSetup
-            || challenge.second_factor === 'emailsetup') { // and an email one by completeEmailSetup
+            || challenge.second_factor === 'emailsetup') { // an email one is finished by completeEmailSetup
             throw expiredError();
         }
 
@@ -203,74 +196,6 @@ class DeviceTrustService {
         this.sendNewDeviceAlert(user, ctx);
 
         return { user, deviceId, method: challenge.auth_method };
-    }
-
-    // A pending login that must set Authenticator up first. The challenge id (256 random bits, only
-    // handed out after the password or Google check) is what proves who is asking.
-    static async loadSetupChallenge(challengeId) {
-        if (!HEX_64.test(String(challengeId || ''))) {
-            throw expiredError();
-        }
-        const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
-        if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
-            || (challenge.purpose || 'login') !== 'login' || challenge.second_factor !== 'totp_setup') {
-            throw expiredError();
-        }
-        return challenge;
-    }
-
-    // Step 1 of setting Authenticator up at login: a fresh secret and QR code for this user.
-    static async beginTotpSetup(challengeId) {
-        const TotpService = require('./totpService');
-        const challenge = await this.loadSetupChallenge(challengeId);
-        const [user] = await userModel.findUserById(challenge.user_id);
-        if (!user) {
-            throw expiredError();
-        }
-        const { secret, qr } = await TotpService.beginSetup(user.id, user.email || user.phone);
-        return { secret, qr };
-    }
-
-    // Step 2: the first code from the app proves the phone is set up. Authenticator is turned on,
-    // backup codes are made, this browser is trusted and the login is finished.
-    static async completeTotpSetup(challengeId, code, req) {
-        const TotpService = require('./totpService');
-        const codeText = String(code || '').trim();
-        if (!/^\d{6}$/.test(codeText)) {
-            throw fail('Please enter the 6-digit code.', 400);
-        }
-        const challenge = await this.loadSetupChallenge(challengeId);
-
-        // Counted first and atomically, like a normal login code.
-        const used = await trustedDeviceModel.reserveAttempt(challenge.id, OTP_MAX_ATTEMPTS);
-        if (used === null) {
-            throw expiredError();
-        }
-        if (!(await TotpService.verifyCode(challenge.user_id, codeText))) {
-            const left = OTP_MAX_ATTEMPTS - used;
-            if (left <= 0) {
-                throw Object.assign(expiredError('Too many wrong codes. Please log in again.'), { userId: challenge.user_id });
-            }
-            throw fail(`Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.`, 400, { userId: challenge.user_id });
-        }
-        if (!(await trustedDeviceModel.consume(challenge.id))) {
-            throw expiredError();
-        }
-
-        const [user] = await userModel.findUserById(challenge.user_id);
-        if (!user || user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
-            throw fail('Your login Id is blocked, please contact the administrator.', 403);
-        }
-
-        // The code was already checked above, so only the switch-on and the backup codes remain.
-        const backupCodes = await TotpService.finishEnable(user.id);
-
-        const ctx = this.requestContext(req);
-        const deviceId = crypto.randomBytes(32).toString('hex');
-        await trustedDeviceModel.addTrusted(user.id, sha256(deviceId), ctx.browser, ctx.ip);
-        this.sendNewDeviceAlert(user, ctx);
-
-        return { user, deviceId, method: challenge.auth_method, backupCodes };
     }
 
     // ---- a login by a user with no email: add the email, prove it, then carry on ---------------------
@@ -327,7 +252,7 @@ class DeviceTrustService {
             throw fail('Your login Id is blocked, please contact the administrator.', 403);
         }
 
-        if (this.isEnabled() && ((await totpModel.isEnabled(user.id)) || !this.isEmailCodeEnabled())) {
+        if (this.isEnabled() && (await totpModel.isEnabled(user.id))) {
             const gate = await this.gate(user, req, challenge.auth_method);
             if (!gate.trusted) {
                 return { gate, method: challenge.auth_method, user };
@@ -357,7 +282,7 @@ class DeviceTrustService {
         if (challenge.second_factor === 'emailsetup') {
             throw fail('Please add your email address first.', 400);
         }
-        if (challenge.second_factor === 'totp' || challenge.second_factor === 'totp_setup') {
+        if (challenge.second_factor === 'totp') {
             throw fail('The code is in your Authenticator app. There is nothing to resend.', 400);
         }
         if (challenge.resend_count >= OTP_MAX_RESENDS) {
@@ -447,6 +372,30 @@ class DeviceTrustService {
             </div>`;
         Promise.resolve(sendMail(email, 'New device login on your Gaming Helper account', content))
             .catch((error) => logger.error(`New device alert email could not be sent: ${error.message}`));
+    }
+
+    // Tells the owner that Google Authenticator was turned on or off on their account, so a
+    // change they did not make is noticed. action is 'on' or 'off'. Never throws.
+    static sendAuthenticatorAlert(user, req, action) {
+        try {
+            const email = String((user && user.email) || '').trim();
+            if (!email) return;
+            const ctx = this.requestContext(req);
+            const when = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+            const turnedOn = action === 'on';
+            const content = `
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+                    <h2>Gaming Helper Online</h2>
+                    <p>Hello ${escapeHtml(user.first_name || 'there')},</p>
+                    <p>Google Authenticator was just turned <strong>${turnedOn ? 'on' : 'off'}</strong> on your account.</p>
+                    <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
+                    <p>If this was you, no action is needed. If not, change your password immediately and contact support.</p>
+                </div>`;
+            Promise.resolve(sendMail(email, `Google Authenticator turned ${turnedOn ? 'on' : 'off'} on your Gaming Helper account`, content))
+                .catch((error) => logger.error(`Authenticator alert email could not be sent: ${error.message}`));
+        } catch (error) {
+            logger.error(`Authenticator alert email could not be prepared: ${error.message}`);
+        }
     }
 }
 

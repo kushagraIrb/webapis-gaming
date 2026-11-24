@@ -20,8 +20,6 @@ router.post('/register', limits.registerPerIp, limits.registerPerTarget, signUpV
 router.post('/login', limits.loginPerIp, limits.loginPerAccount, loginValidation, userController.login);
 router.post('/login/verify-otp', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.verifyLoginOtp);
 router.post('/login/resend-otp', limits.loginOtpPerIp, limits.loginOtpResend, userController.resendLoginOtp);
-router.post('/login/totp-setup/begin', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.loginTotpSetupBegin.bind(userController));
-router.post('/login/totp-setup/confirm', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.loginTotpSetupConfirm.bind(userController));
 router.post('/login/email-setup/send', limits.loginOtpPerIp, limits.loginOtpResend, userController.loginEmailSetupSend.bind(userController));
 router.post('/login/email-setup/resend', limits.loginOtpPerIp, limits.loginOtpResend, userController.loginEmailSetupResend.bind(userController));
 router.post('/login/email-setup/confirm', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.loginEmailSetupConfirm.bind(userController));
