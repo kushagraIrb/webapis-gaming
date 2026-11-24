@@ -374,11 +374,12 @@ class UserController {
             // A wrong password or unknown phone also counts towards the login block: that row is written
             // before the answer is sent, and if it was the last attempt allowed the IP and phones are blocked.
             let newBlock = null;
+            let attemptsLeft = null;
             if (statusCode !== 500) {
                 const reason = req.authFailReason || apiResponseMsg;
                 if (LoginBlock.COUNTED_REASONS.includes(reason)) {
                     await authLog.recordFailureNow(req, { method: 'password', reason, phone });
-                    newBlock = await LoginBlock.afterFailedAttempt(req);
+                    ({ block: newBlock, attemptsLeft } = await LoginBlock.afterFailedAttempt(req));
                 } else {
                     authLog.recordFailure(req, { method: 'password', reason, phone });
                 }
@@ -402,6 +403,11 @@ class UserController {
             // That was the last attempt: the answer is the block, not "wrong password".
             if (newBlock) {
                 return res.status(429).send(LoginBlock.body(newBlock));
+            }
+
+            // A wrong password that did not block yet: say how many tries are left.
+            if (attemptsLeft !== null && statusCode === 401) {
+                return res.status(401).send({ msg: LoginBlock.attemptsMessage(apiResponseMsg, attemptsLeft), attemptsLeft });
             }
 
             return res.status(statusCode).send({ msg: apiResponseMsg });
