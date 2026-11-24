@@ -109,8 +109,14 @@ test('three wrong passwords block the IP and the phone; the third answer is the 
   const user = await makeUser();
   const ip = nextIp();
 
-  assert.strictEqual((await login(ip, user.phone)).status, 401);
-  assert.strictEqual((await login(ip, user.phone)).status, 401);
+  const first = await login(ip, user.phone);
+  assert.strictEqual(first.status, 401);
+  assert.strictEqual(first.body.attemptsLeft, 2);
+  assert.match(first.body.msg, /Incorrect phone number or password! You have 2 attempts left./);
+  const second = await login(ip, user.phone);
+  assert.strictEqual(second.status, 401);
+  assert.strictEqual(second.body.attemptsLeft, 1);
+  assert.match(second.body.msg, /You have 1 attempt left./, 'singular for the last one');
 
   const third = await login(ip, user.phone);
   assert.strictEqual(third.status, 429);
@@ -290,4 +296,30 @@ test('trusted IP rules', () => {
   assert.strictEqual(trustedClientIp(req('127.0.0.1', { 'cf-connecting-ip': '203.0.113.9' })).trusted, false);
   assert.strictEqual(trustedClientIp(req('104.16.1.1')).trusted, false, 'a Cloudflare edge with no header');
   assert.strictEqual(trustedClientIp(req('2606:4700::1', { 'cf-connecting-ip': '2001:db8::5' })).ip, '2001:db8::5');
+});
+
+test('a password shorter than 6 characters gets a clear message and does not use up an attempt', async () => {
+  const user = await makeUser();
+  const ip = nextIp();
+  for (let i = 0; i < 5; i++) {
+    const res = await login(ip, user.phone, 'abc12');
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual(res.body.errors[0].msg, 'Password must be at least 6 characters');
+  }
+  assert.strictEqual((await blockRows(ip)).length, 0, 'nothing was counted');
+  const next = await login(ip, user.phone);
+  assert.strictEqual(next.body.attemptsLeft, 2, 'the three attempts are all still there');
+});
+
+test('the attempts left are never shown when the IP cannot be trusted', async () => {
+  const user = await makeUser();
+  const res = await fetch(`${base}/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: user.phone, password: WRONG }),
+  });
+  const body = await res.json();
+  assert.strictEqual(res.status, 401);
+  assert.strictEqual(body.attemptsLeft, undefined, 'nothing can be counted, so nothing is promised');
+  assert.strictEqual(body.msg, 'Incorrect phone number or password!');
 });
