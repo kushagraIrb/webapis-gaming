@@ -1,6 +1,7 @@
 const db = require('../config/database');
 const moment = require('moment');
 const mustChange = require('../helpers/mustChangePassword');
+const primaryLock = require('../helpers/primaryLock');
 
 // The one-account-per-user rule is lifted: a user can add more accounts again (the bank account
 // OTP still applies). To bring the rule back, set this to true (the panel has the same constant in
@@ -515,42 +516,40 @@ class UserModel {
             return inserted;
         }
 
-        // Step 1: Update existing accounts to remove primary status
-        const updateQuery = `UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ?`;
-        const [updateResult] = await db.promise().query(updateQuery, [userId]);
+        // A new account becomes primary at once only when the user has no primary account (their first
+        // one). Otherwise it is added as a normal account and may be made primary after 24 hours (see
+        // helpers/primaryLock.js); the existing primary account keeps being used for withdrawals.
+        // The check and the insert are one statement, so two quick clicks cannot both become primary.
+        const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+        const lockOn = await primaryLock.columnReady();
+        const noPrimary = `NOT EXISTS (SELECT 1 FROM tbl_user_account WHERE user_id = ? AND is_soft_deleted = 0 AND primary_account = 1)`;
+        const [insertResult] = await db.promise().query(
+            `INSERT INTO tbl_user_account
+             (user_id, bank_name, account_number, ifsc, ac_holder_name, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, primary_account, modified${lockOn ? ', primary_allowed_at' : ''})
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${noPrimary}, ?${lockOn ? `, IF(${noPrimary}, NULL, DATE_ADD(NOW(), INTERVAL ${primaryLock.LOCK_HOURS} HOUR))` : ''}
+             FROM DUAL`,
+            [
+                userId, accountData.bank_name, accountData.account, accountData.ifsc_code,
+                accountData.holder_name, accountData.account_type, accountData.addhar_number,
+                accountData.upi_id, accountData.phone_pay, accountData.g_pay, accountData.paytm,
+                userId, istTime,
+                ...(lockOn ? [userId] : []),
+            ]
+        );
 
-        // Check if update was successful (affectedRows > 0 means rows were updated)
-        if (updateResult.affectedRows >= 0) {
-            // Get the current time in IST
-            const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-            // Step 2: Insert the new account with primary_account = 1
-            const insertQuery = `
-                INSERT INTO tbl_user_account 
-                (user_id, bank_name, account_number, ifsc, ac_holder_name, account_type, addhar_number, upi_id, phone_pay, g_pay, paytm, primary_account, modified) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-            `;
-
-            const values = [
-                userId,
-                accountData.bank_name,
-                accountData.account,
-                accountData.ifsc_code,
-                accountData.holder_name,
-                accountData.account_type,
-                accountData.addhar_number,
-                accountData.upi_id,
-                accountData.phone_pay,
-                accountData.g_pay,
-                accountData.paytm,
-                istTime
-            ];
-
-            const [insertResult] = await db.promise().query(insertQuery, values);
-            return insertResult;
-        } else {
-            throw new Error("Failed to update existing accounts.");
+        const [[added]] = await db.promise().query(
+            'SELECT primary_account FROM tbl_user_account WHERE ac_id = ?',
+            [insertResult.insertId]
+        );
+        const isPrimary = !!added && added.primary_account === 1;
+        if (isPrimary) {
+            // Any older (deleted) accounts of this user must not stay primary.
+            await db.promise().query(
+                'UPDATE tbl_user_account SET primary_account = 0 WHERE user_id = ? AND ac_id <> ?',
+                [userId, insertResult.insertId]
+            );
         }
+        return { ...insertResult, isPrimary, primaryLockHours: !isPrimary && lockOn ? primaryLock.LOCK_HOURS : 0 };
     }
 
     static async fetchAccountDetails(userId) {
