@@ -323,3 +323,51 @@ test('the attempts left are never shown when the IP cannot be trusted', async ()
   assert.strictEqual(body.attemptsLeft, undefined, 'nothing can be counted, so nothing is promised');
   assert.strictEqual(body.msg, 'Incorrect phone number or password!');
 });
+
+test('trusted IP rules when nginx sends only X-Forwarded-For (the dev server)', () => {
+  const req = (socket, headers = {}) => ({ socket: { remoteAddress: socket }, headers });
+  // Cloudflare in front: the visitor first, then the Cloudflare address nginx appended.
+  assert.deepStrictEqual(
+    trustedClientIp(req('::ffff:127.0.0.1', { 'x-forwarded-for': '203.0.113.9, 162.159.124.27', 'cf-connecting-ip': '203.0.113.9' })),
+    { ip: '203.0.113.9', trusted: true }
+  );
+  // A direct visitor writing fake entries in front: only the end, added by nginx, counts.
+  assert.deepStrictEqual(
+    trustedClientIp(req('127.0.0.1', { 'x-forwarded-for': '1.2.3.4, 198.51.100.7', 'cf-connecting-ip': '203.0.113.9' })),
+    { ip: '198.51.100.7', trusted: true }
+  );
+  // X-Real-IP, when it arrives, wins over the list.
+  assert.strictEqual(trustedClientIp(req('127.0.0.1', { 'x-real-ip': '198.51.100.8', 'x-forwarded-for': '9.9.9.9, 198.51.100.7' })).ip, '198.51.100.8');
+  // An end that is itself private cannot be trusted.
+  assert.strictEqual(trustedClientIp(req('127.0.0.1', { 'x-forwarded-for': '198.51.100.7, 10.0.0.1', 'cf-connecting-ip': '203.0.113.9' })).trusted, false);
+  assert.strictEqual(trustedClientIp(req('127.0.0.1', { 'x-forwarded-for': '' })).trusted, false);
+});
+
+test('behind Cloudflare with only X-Forwarded-For: the visitor is blocked and counted, a faked header is not', async () => {
+  const user = await makeUser();
+  const visitor = nextIp();
+  const faked = nextIp();
+  ips.add(visitor); ips.add(faked);
+  const viaForwarded = async (phone, headers) => {
+    const res = await fetch(`${base}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ phone, password: WRONG }),
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  };
+  const headers = { 'X-Forwarded-For': `${visitor}, 162.159.124.27`, 'CF-Connecting-IP': visitor };
+
+  const first = await viaForwarded(user.phone, headers);
+  assert.strictEqual(first.status, 401);
+  assert.strictEqual(first.body.attemptsLeft, 2, 'the countdown shows when the visitor can be told');
+  assert.strictEqual((await viaForwarded(user.phone, headers)).body.attemptsLeft, 1);
+  assert.strictEqual((await viaForwarded(user.phone, headers)).status, 429);
+  assert.strictEqual((await blockRows(visitor)).length, 1);
+
+  // Someone talking straight to the server and naming the first visitor in the header is not that visitor.
+  const other = await makeUser(); // the first phone is already blocked, so it would be refused before anything is counted
+  for (let i = 0; i < 3; i++) await viaForwarded(other.phone, { 'X-Forwarded-For': `${visitor}, ${faked}`, 'CF-Connecting-IP': visitor });
+  assert.strictEqual((await blockRows(visitor)).length, 1, 'the real visitor was not blocked a second time by the fake');
+  assert.strictEqual((await blockRows(faked)).length, 1, 'the one who actually connected is the one blocked');
+});
