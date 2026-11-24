@@ -245,9 +245,7 @@ class UserController {
                     method: googleResult.method || 'email',
                     msg: googleResult.method === 'totp'
                         ? 'Enter the code from your Authenticator app.'
-                        : googleResult.method === 'totp_setup'
-                            ? 'Set up Google Authenticator to continue.'
-                            : `We sent a verification code to ${googleResult.maskedEmail}.`
+                        : `We sent a verification code to ${googleResult.maskedEmail}.`
                 });
             }
 
@@ -330,9 +328,7 @@ class UserController {
                     method: loginResult.method || 'email',
                     msg: loginResult.method === 'totp'
                         ? 'Enter the code from your Authenticator app.'
-                        : loginResult.method === 'totp_setup'
-                            ? 'Set up Google Authenticator to continue.'
-                            : `We sent a verification code to ${loginResult.maskedEmail}.`
+                        : `We sent a verification code to ${loginResult.maskedEmail}.`
                 });
             }
 
@@ -416,49 +412,6 @@ class UserController {
                 ...(error.restartLogin && { restartLogin: true })
             });
         }
-    }
-
-    // Login for a user without Authenticator, with the email code switched off: they set it up now.
-    async loginTotpSetupBegin(req, res) {
-        try {
-            const { secret, qr } = await userService.beginLoginTotpSetup((req.body || {}).challengeId);
-            return res.status(200).send({ status: true, secret, qr });
-        } catch (error) {
-            return this.loginTotpError(res, error, 'loginTotpSetupBegin');
-        }
-    }
-
-    async loginTotpSetupConfirm(req, res) {
-        try {
-            const { challengeId, code } = req.body || {};
-            const { msg, accessToken, refreshToken, deviceId, userId, method, backupCodes } =
-                await userService.completeLoginTotpSetup(challengeId, code, req);
-            authLog.record(req, { userId, eventType: 'login', method: method === 'google' ? 'google' : 'otp' });
-
-            res.cookie('refreshToken', refreshToken, {
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'Strict',
-                maxAge: 30 * 24 * 60 * 60 * 1000
-            });
-
-            return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId, backupCodes });
-        } catch (error) {
-            if ((error.statusCode || 500) !== 500 && error.userId) {
-                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
-            }
-            return this.loginTotpError(res, error, 'loginTotpSetupConfirm');
-        }
-    }
-
-    loginTotpError(res, error, label) {
-        const statusCode = error.statusCode || 500;
-        if (statusCode === 500) {
-            logger.error(`Error in ${label}: ${error.message}`, { stack: error.stack });
-        }
-        return res.status(statusCode).send({
-            msg: statusCode === 500 ? 'Something went wrong' : error.message,
-            ...(error.restartLogin && { restartLogin: true })
-        });
     }
 
     async resendLoginOtp(req, res) {
@@ -757,6 +710,8 @@ class UserController {
             }
             const { backupCodes } = await TotpService.confirmEnable(req.user_id, req.body.code);
             authLog.record(req, { userId: req.user_id, eventType: 'profile_update', method: 'password', details: 'Authenticator turned on' });
+            const [owner] = await userModel.findUserById(req.user_id);
+            DeviceTrust.sendAuthenticatorAlert(owner, req, 'on');
             return res.status(200).json({ status: true, message: 'Authenticator is now on.', backupCodes });
         } catch (error) {
             return this.totpError(res, error, 'totpEnable');
@@ -784,6 +739,7 @@ class UserController {
             // Turning off a protection: no browser stays trusted except this one.
             await DeviceTrust.clearOthersForUser(req.user_id, req);
             authLog.record(req, { userId: req.user_id, eventType: 'profile_update', method: 'password', details: 'Authenticator turned off' });
+            DeviceTrust.sendAuthenticatorAlert(user, req, 'off');
             return res.status(200).json({ status: true, message: 'Authenticator is now off.' });
         } catch (error) {
             return this.totpError(res, error, 'totpDisable');
