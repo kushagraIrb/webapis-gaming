@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const db = require('../config/database'); // adjust the path to your DB connection module
 const util = require('util');
+const mustChange = require('./mustChangePassword');
 
 // Promisify query if you're using mysql or mysql2
 const query = util.promisify(db.query).bind(db);
@@ -55,7 +56,8 @@ const authToken = async (req, res, next) => {
         req.user_id = decoded.id;
 
         // CHANGED: Query is now parameterized to prevent SQL injection and selects the session_token
-        const userQuery = 'SELECT id, is_verified, status, ip_status, session_token FROM tbl_registration WHERE id = ?';
+        const checkMustChange = await mustChange.columnReady();
+        const userQuery = 'SELECT id, is_verified, status, ip_status, session_token' + (checkMustChange ? ', must_change_password' : '') + ' FROM tbl_registration WHERE id = ?';
         const results = await query(userQuery, [decoded.id]);
 
         if (results.length === 0) {
@@ -85,6 +87,14 @@ const authToken = async (req, res, next) => {
         
         if (user.is_verified !== 1 || user.ip_status !== 1) {
             return res.status(401).json({ message: 'Your login Id is blocked, please contact the administrator.' });
+        }
+
+        // The admin set this user's password: nothing else works until they choose their own.
+        if (checkMustChange && user.must_change_password === 1 && !mustChange.isAllowedPath(req)) {
+            return res.status(403).json({
+                mustChangePassword: true,
+                message: 'Please set a new password to continue.',
+            });
         }
 
         next();

@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const moment = require('moment');
+const mustChange = require('../helpers/mustChangePassword');
 
 // The one-account-per-user rule is lifted: a user can add more accounts again (the bank account
 // OTP still applies). To bring the rule back, set this to true (the panel has the same constant in
@@ -441,7 +442,9 @@ class UserModel {
     static async changeUserPassword(hashedPassword, userId) {
         try {
             // Clearing both tokens invalidates every existing device session.
-            const query = `UPDATE tbl_registration SET password = ?, session_token = NULL, refresh_token = NULL WHERE id = ?`;
+            // The user now has a password of their own: an admin-set one no longer has to be changed.
+            const clearMustChange = (await mustChange.columnReady()) ? ', must_change_password = 0' : '';
+            const query = `UPDATE tbl_registration SET password = ?, session_token = NULL, refresh_token = NULL${clearMustChange} WHERE id = ?`;
             const [result] = await db.promise().query(query, [hashedPassword, userId]);
             return result;
         } catch (error) {
