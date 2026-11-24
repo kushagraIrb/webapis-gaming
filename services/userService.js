@@ -14,6 +14,7 @@ const { JWT_SECRET, BASE_URL } = process.env;
 const requestIp = require('request-ip');
 const sendMail = require('../helpers/sendMail');
 const crypto = require('crypto');
+const mustChange = require('../helpers/mustChangePassword');
 
 class UserService {
 
@@ -176,7 +177,8 @@ class UserService {
             throw err;
         }
     
-        return userDetails;
+        // The site sends the user to the change-password page while this is true.
+        return { ...userDetails, mustChangePassword: await mustChange.isRequired(userId) };
     }
     
     static async processSendOtp(email, phone, name) {
@@ -630,6 +632,17 @@ class UserService {
     }
 
     static async changeUserPassword(password, userId, req) {
+        // A password an admin set is only temporary: the user has to pick a different one of their own.
+        if (await mustChange.isRequired(userId)) {
+            const [rows] = await db.promise().query('SELECT password FROM tbl_registration WHERE id = ?', [userId]);
+            const current = rows[0] && rows[0].password ? rows[0].password.replace('$2y$', '$2b$') : null;
+            if (current && (await bcrypt.compare(password, current))) {
+                const err = new Error('Please choose a new password, different from the one you were given.');
+                err.statusCode = 400;
+                throw err;
+            }
+        }
+
         try {
             const hashedPassword = await bcrypt.hash(password, 10);
 
