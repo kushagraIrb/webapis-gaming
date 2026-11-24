@@ -674,7 +674,8 @@ class UserController {
             // A server error never shows its raw text (it is already in the log above).
             return res.status(statusCode).send({
                 message: statusCode === 500 ? 'Something went wrong. Please try again.' : (error.message || 'Something went wrong'),
-                ...(error.restartOtp && { restartOtp: true })
+                ...(error.restartOtp && { restartOtp: true }),
+                ...(error.emailRequired && { emailRequired: true })
             });
         }
     }
