@@ -254,3 +254,11 @@ test('email code stays until Authenticator is on: no setup step at login, the em
   assert.ok(done.accessToken, 'a session is issued straight away');
   assert.strictEqual(done.setupRequired, undefined);
 });
+
+test('masked email shows the first letter and the last three letters of the name', () => {
+  assert.strictEqual(DeviceTrust.maskEmail('saket@gmail.com'), 's*ket@gmail.com');
+  assert.strictEqual(DeviceTrust.maskEmail('sakets@gmail.com'), 's**ets@gmail.com');
+  assert.strictEqual(DeviceTrust.maskEmail('abc@x.com'), 'a**@x.com', 'a short name is not shown almost whole');
+  assert.strictEqual(DeviceTrust.maskEmail('averylongemailname@x.com'), 'a******ame@x.com', 'the stars do not give away the length');
+  assert.strictEqual(DeviceTrust.maskEmail('nodomain'), '***');
+});
