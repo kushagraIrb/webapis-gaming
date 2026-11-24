@@ -9,7 +9,7 @@ const db = require('../config/database');
 //
 // Time comparisons use the database clock (NOW()).
 const PURPOSE = 'email_setup';
-const OTP_TYPE = 2;
+const OTP_TYPE = 1; // otp_type: 1 = sent to an email, 2 = sent to a phone
 
 class EmailVerifyModel {
     static async create({ keyHash, userId, newEmail, otp }) {
