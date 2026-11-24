@@ -334,3 +334,10 @@ test('device ids that are not 64 hex characters are ignored', async () => {
   const result = await login(user, makeReq('not-a-device-id'));
   assert.strictEqual(result.otpRequired, true);
 });
+
+test('masked email shows the first letter and the last three letters of the name', () => {
+  assert.strictEqual(DeviceTrust.maskEmail('saket@gmail.com'), 's*ket@gmail.com');
+  assert.strictEqual(DeviceTrust.maskEmail('saketsingh6996@gmail.com'), 's******996@gmail.com');
+  assert.strictEqual(DeviceTrust.maskEmail('abc@x.com'), 'a**@x.com', 'a short name is not shown almost whole');
+  assert.strictEqual(DeviceTrust.maskEmail('nodomain'), '***');
+});

@@ -52,10 +52,16 @@ class DeviceTrustService {
         return HEX_64.test(raw) ? sha256(raw) : null;
     }
 
+    // First letter and last three letters of the name stay visible: saket@gmail.com -> s*ket@gmail.com.
+    // A name of four letters or fewer would be shown almost whole that way, so it keeps only its
+    // first letter (abc@x.com -> a**@x.com).
     static maskEmail(email) {
         const [name, domain] = String(email).split('@');
         if (!domain) return '***';
-        return `${name.slice(0, 1)}${'*'.repeat(Math.max(2, Math.min(name.length - 1, 6)))}@${domain}`;
+        if (name.length <= 4) {
+            return `${name.slice(0, 1)}${'*'.repeat(Math.max(2, name.length - 1))}@${domain}`;
+        }
+        return `${name.slice(0, 1)}${'*'.repeat(Math.min(name.length - 4, 6))}${name.slice(-3)}@${domain}`;
     }
 
     static otpHash(challengeId, otp) {
