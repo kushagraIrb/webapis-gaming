@@ -698,7 +698,11 @@ class UserService {
                 throw err;
             }
 
-            return { status: 'Account information added successfully.', acId: result.insertId };
+            // A new account is not primary at once when the user already has one: say so.
+            const status = result.primaryLockHours
+                ? `Account added. For your security it can be made your primary account after ${result.primaryLockHours} hours.`
+                : 'Account information added successfully.';
+            return { status, acId: result.insertId };
         } catch (error) {
             if (error.blocked) throw error;
             throw new Error('Error updating profile: ' + error.message);

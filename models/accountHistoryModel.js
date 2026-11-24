@@ -1,9 +1,14 @@
 const db = require('../config/database');
+const primaryLock = require('../helpers/primaryLock');
 
 class AccountHistoryModel {
     // Fetch deposit history for a user with pagination
     static async getAccountData(userId, start, perPage) {
-        let query = `SELECT ac_holder_name,account_number,ifsc,bank_name,account_type,pan_number,addhar_number,upi_id,phone_pay,g_pay,paytm,ac_id, primary_account FROM tbl_user_account WHERE is_soft_deleted = 0 AND user_id = ? ORDER BY ac_id DESC`;
+        // Minutes until a newly added account may be made primary (null when it may be now).
+        const lockColumn = (await primaryLock.columnReady())
+            ? ', IF(primary_allowed_at > NOW(), CEIL(TIMESTAMPDIFF(SECOND, NOW(), primary_allowed_at) / 60), NULL) AS primary_unlock_minutes'
+            : '';
+        let query = `SELECT ac_holder_name,account_number,ifsc,bank_name,account_type,pan_number,addhar_number,upi_id,phone_pay,g_pay,paytm,ac_id, primary_account${lockColumn} FROM tbl_user_account WHERE is_soft_deleted = 0 AND user_id = ? ORDER BY ac_id DESC`;
 
         // Add pagination if required
         if (perPage !== null && start !== null) {
@@ -40,14 +45,19 @@ class AccountHistoryModel {
             await connection.beginTransaction();
 
             // The account must be one of the caller's own, still-active accounts.
+            const lockOn = await primaryLock.columnReady();
             const [own] = await connection.query(
-                `SELECT ac_id FROM tbl_user_account
+                `SELECT ac_id${lockOn ? ', GREATEST(0, TIMESTAMPDIFF(SECOND, NOW(), primary_allowed_at)) AS lock_seconds' : ''}
+                 FROM tbl_user_account
                  WHERE user_id = ? AND ac_id = ? AND (is_soft_deleted = 0 OR is_soft_deleted IS NULL)
                  FOR UPDATE`,
                 [userId, accountId]
             );
             if (!own.length) {
                 throw fail('Account not found.', 404);
+            }
+            if (lockOn && own[0].lock_seconds > 0) {
+                throw primaryLock.lockedError(own[0].lock_seconds);
             }
 
             const [pending] = await connection.query(
@@ -115,13 +125,18 @@ class AccountHistoryModel {
             return err;
         };
 
+        const lockOn = await primaryLock.columnReady();
         const [own] = await db.promise().query(
-            `SELECT ac_id FROM tbl_user_account
+            `SELECT ac_id${lockOn ? ', GREATEST(0, TIMESTAMPDIFF(SECOND, NOW(), primary_allowed_at)) AS lock_seconds' : ''}
+             FROM tbl_user_account
              WHERE user_id = ? AND ac_id = ? AND (is_soft_deleted = 0 OR is_soft_deleted IS NULL)`,
             [userId, accountId]
         );
         if (!own.length) {
             throw fail('Account not found.', 404);
+        }
+        if (lockOn && own[0].lock_seconds > 0) {
+            throw primaryLock.lockedError(own[0].lock_seconds);
         }
 
         const [pending] = await db.promise().query(
