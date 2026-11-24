@@ -234,3 +234,23 @@ test('Authenticator is not used when the new-device check itself is off', async 
   const result = await login(user, makeReq());
   assert.ok(result.newAccessToken);
 });
+
+test('turning Authenticator on or off emails the owner', async () => {
+  const user = await makeUser();
+  const [owner] = await db.query('SELECT * FROM tbl_registration WHERE id = ?', [user.id]);
+  DeviceTrust.sendAuthenticatorAlert(owner[0], makeReq(), 'on');
+  DeviceTrust.sendAuthenticatorAlert(owner[0], makeReq(), 'off');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(sent.some((m) => /turned on/.test(m.subject)));
+  assert.ok(sent.some((m) => /turned off/.test(m.subject)));
+});
+
+test('email code stays until Authenticator is on: no setup step at login, the emailed code logs in', async () => {
+  const user = await makeUser();
+  const first = await login(user, makeReq());
+  assert.strictEqual(first.method, 'email');
+  const code = sent[sent.length - 1].html.match(/letter-spacing: 8px[^>]*>(\d{6})</)[1];
+  const done = await userService.completeDeviceLogin(first.challengeId, code, makeReq());
+  assert.ok(done.accessToken, 'a session is issued straight away');
+  assert.strictEqual(done.setupRequired, undefined);
+});

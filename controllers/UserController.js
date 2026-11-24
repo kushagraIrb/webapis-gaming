@@ -710,6 +710,8 @@ class UserController {
             }
             const { backupCodes } = await TotpService.confirmEnable(req.user_id, req.body.code);
             authLog.record(req, { userId: req.user_id, eventType: 'profile_update', method: 'password', details: 'Authenticator turned on' });
+            const [owner] = await userModel.findUserById(req.user_id);
+            DeviceTrust.sendAuthenticatorAlert(owner, req, 'on');
             return res.status(200).json({ status: true, message: 'Authenticator is now on.', backupCodes });
         } catch (error) {
             return this.totpError(res, error, 'totpEnable');
@@ -737,6 +739,7 @@ class UserController {
             // Turning off a protection: no browser stays trusted except this one.
             await DeviceTrust.clearOthersForUser(req.user_id, req);
             authLog.record(req, { userId: req.user_id, eventType: 'profile_update', method: 'password', details: 'Authenticator turned off' });
+            DeviceTrust.sendAuthenticatorAlert(user, req, 'off');
             return res.status(200).json({ status: true, message: 'Authenticator is now off.' });
         } catch (error) {
             return this.totpError(res, error, 'totpDisable');

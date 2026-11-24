@@ -279,6 +279,30 @@ class DeviceTrustService {
         Promise.resolve(sendMail(email, 'New device login on your Gaming Helper account', content))
             .catch((error) => logger.error(`New device alert email could not be sent: ${error.message}`));
     }
+
+    // Tells the owner that Google Authenticator was turned on or off on their account, so a
+    // change they did not make is noticed. action is 'on' or 'off'. Never throws.
+    static sendAuthenticatorAlert(user, req, action) {
+        try {
+            const email = String((user && user.email) || '').trim();
+            if (!email) return;
+            const ctx = this.requestContext(req);
+            const when = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+            const turnedOn = action === 'on';
+            const content = `
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+                    <h2>Gaming Helper Online</h2>
+                    <p>Hello ${escapeHtml(user.first_name || 'there')},</p>
+                    <p>Google Authenticator was just turned <strong>${turnedOn ? 'on' : 'off'}</strong> on your account.</p>
+                    <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
+                    <p>If this was you, no action is needed. If not, change your password immediately and contact support.</p>
+                </div>`;
+            Promise.resolve(sendMail(email, `Google Authenticator turned ${turnedOn ? 'on' : 'off'} on your Gaming Helper account`, content))
+                .catch((error) => logger.error(`Authenticator alert email could not be sent: ${error.message}`));
+        } catch (error) {
+            logger.error(`Authenticator alert email could not be prepared: ${error.message}`);
+        }
+    }
 }
 
 // Shared with the bank account OTP (services/accountOtpService.js) so both use the same rules.
