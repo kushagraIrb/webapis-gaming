@@ -64,7 +64,7 @@ class UserService {
         if (req) {
             const gate = await DeviceTrust.gate(user, req, 'google');
             if (!gate.trusted) {
-                return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail };
+                return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail, method: gate.method };
             }
         }
 
@@ -516,7 +516,7 @@ class UserService {
         // A browser this account has not passed the email OTP on gets no session yet.
         const gate = await DeviceTrust.gate(user, req, 'password');
         if (!gate.trusted) {
-            return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail };
+            return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail, method: gate.method };
         }
 
         // Generate a new access token

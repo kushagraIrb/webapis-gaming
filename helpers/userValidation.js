@@ -32,6 +32,20 @@ exports.changePwdValidation = [
     }),
 ];
 
+// Authenticator: a 6-digit app code (turn on), or an app code / backup code (turn off).
+exports.totpEnableValidation = [
+    check('code', 'Enter the 6-digit code from your app')
+        .isString().bail()
+        .matches(/^\d{6}$/),
+];
+
+exports.totpDisableValidation = [
+    check('password', 'Password is required').isString().bail().not().isEmpty(),
+    check('code', 'Enter the 6-digit code from your app or a backup code')
+        .isString().bail()
+        .matches(/^(\d{6}|[a-fA-F0-9]{5}-?[a-fA-F0-9]{5})$/),
+];
+
 exports.editProfileValidation = [
     check('first_name', 'First Name is required').not().isEmpty(),
     check('last_name', 'Last Name is required').not().isEmpty()
