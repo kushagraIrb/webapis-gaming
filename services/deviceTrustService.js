@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const requestIp = require('request-ip');
 const trustedDeviceModel = require('../models/trustedDeviceModel');
 const userModel = require('../models/userModel');
+const totpModel = require('../models/totpModel');
 const sendMail = require('../helpers/sendMail');
 const browserName = require('../helpers/browserName');
 const { logger } = require('../logger');
@@ -83,6 +84,21 @@ class DeviceTrustService {
         const otp = String(crypto.randomInt(100000, 1000000));
         const ctx = this.requestContext(req);
 
+        // A user with Google Authenticator turned on enters the code from the app: nothing is mailed.
+        if (await totpModel.isEnabled(user.id)) {
+            await trustedDeviceModel.createChallenge({
+                challengeHash: sha256(challengeId),
+                userId: user.id,
+                method,
+                otpHash: this.otpHash(challengeId, otp), // never used; the column is required
+                ipAddress: ctx.ip,
+                browser: ctx.browser,
+                validMinutes: OTP_VALID_MINUTES,
+                secondFactor: 'totp',
+            });
+            return { trusted: false, challengeId, maskedEmail: this.maskEmail(email), method: 'totp' };
+        }
+
         await trustedDeviceModel.createChallenge({
             challengeHash: sha256(challengeId),
             userId: user.id,
@@ -95,11 +111,14 @@ class DeviceTrustService {
 
         this.sendCodeMail(email, user.first_name, otp, ctx);
 
-        return { trusted: false, challengeId, maskedEmail: this.maskEmail(email) };
+        return { trusted: false, challengeId, maskedEmail: this.maskEmail(email), method: 'email' };
     }
 
     static async verify(challengeId, otp, req) {
-        if (!HEX_64.test(String(challengeId || '')) || !/^\d{6}$/.test(String(otp || ''))) {
+        // 6 digits (mailed code or Authenticator app), or a backup code (10 hex characters).
+        const otpText = String(otp || '').trim();
+        const looksRight = /^\d{6}$/.test(otpText) || /^[a-fA-F0-9]{5}-?[a-fA-F0-9]{5}$/.test(otpText);
+        if (!HEX_64.test(String(challengeId || '')) || !looksRight) {
             throw fail('Please enter the 6-digit code.', 400);
         }
 
@@ -118,9 +137,17 @@ class DeviceTrustService {
             throw expiredError();
         }
 
-        const expected = Buffer.from(challenge.otp_hash, 'hex');
-        const given = Buffer.from(this.otpHash(challengeId, otp), 'hex');
-        if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+        // Right if it matches the mailed code, or (Authenticator) the app's current code or an
+        // unused backup code. The guess was already counted above either way.
+        let codeOk;
+        if (challenge.second_factor === 'totp') {
+            codeOk = await require('./totpService').verifyAny(challenge.user_id, otpText);
+        } else {
+            const expected = Buffer.from(challenge.otp_hash, 'hex');
+            const given = Buffer.from(this.otpHash(challengeId, otpText), 'hex');
+            codeOk = expected.length === given.length && crypto.timingSafeEqual(expected, given);
+        }
+        if (!codeOk) {
             const left = OTP_MAX_ATTEMPTS - used;
             if (left <= 0) {
                 throw Object.assign(expiredError('Too many wrong codes. Please log in again.'), { userId: challenge.user_id });
@@ -154,6 +181,9 @@ class DeviceTrustService {
         const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
         if (!challenge || challenge.used_at || !challenge.is_live || (challenge.purpose || 'login') !== 'login') {
             throw expiredError();
+        }
+        if (challenge.second_factor === 'totp') {
+            throw fail('The code is in your Authenticator app. There is nothing to resend.', 400);
         }
         if (challenge.resend_count >= OTP_MAX_RESENDS) {
             throw expiredError('Too many codes requested. Please log in again.');

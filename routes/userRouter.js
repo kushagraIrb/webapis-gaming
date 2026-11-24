@@ -3,7 +3,7 @@ const router = express.Router();
 
 const upload = require('../helpers/uploads');
 
-const { otpValidation, signUpValidation, loginValidation, changePwdValidation, editProfileValidation, addAccountValidation } = require('../helpers/userValidation');
+const { otpValidation, signUpValidation, loginValidation, changePwdValidation, editProfileValidation, addAccountValidation, totpEnableValidation, totpDisableValidation } = require('../helpers/userValidation');
 const authenticateToken = require('../helpers/authToken');
 const userController = require('../controllers/UserController');
 const limits = require('../helpers/rateLimiters');
@@ -35,6 +35,10 @@ router.post('/change-password', changePwdValidation, userController.changePasswo
 router.post('/edit-profile', upload.single('profile_image'), editProfileValidation, userController.editProfile);
 router.post('/add-account', limits.accountOtpPerUser, addAccountValidation, userController.addAccount);
 router.get('/get-account-details', userController.getAccount);
+router.get('/totp/status', userController.totpStatus.bind(userController));
+router.post('/totp/setup', limits.totpPerUser, userController.totpSetup.bind(userController));
+router.post('/totp/enable', limits.totpPerUser, totpEnableValidation, userController.totpEnable.bind(userController));
+router.post('/totp/disable', limits.totpPerUser, totpDisableValidation, userController.totpDisable.bind(userController));
 router.get('/logout', userController.logout);
 
 module.exports = router;
