@@ -38,8 +38,10 @@ class TrustedDeviceModel {
         await db.promise().query('DELETE FROM tbl_login_challenge WHERE user_id = ?', [userId]);
     }
 
-    // secondFactor 'emailsetup' (needs the second_factor column, added by sql/20261127-email-required.sql) marks a
-    // login waiting for the user's email; the default 'email' leaves the old behaviour as it was.
+    // secondFactor needs the second_factor column (sql/20261126-totp.sql or sql/20261127-email-required.sql,
+    // whichever ran first; both add it the same way). 'totp' means the code comes from the user's
+    // Authenticator app and no email is sent; 'emailsetup' marks a login waiting for the user's email;
+    // the default 'email' leaves the old behaviour as it was.
     static async createChallenge({ challengeHash, userId, method, otpHash, ipAddress, browser, validMinutes, secondFactor = 'email' }) {
         await db.promise().query(
             'DELETE FROM tbl_login_challenge WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)'

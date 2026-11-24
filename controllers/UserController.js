@@ -7,6 +7,8 @@ const authLog = require('../models/authLogModel');
 const userModel = require('../models/userModel');
 const DeviceTrust = require('../services/deviceTrustService');
 const AccountOtp = require('../services/accountOtpService');
+const TotpService = require('../services/totpService');
+const bcrypt = require('bcrypt');
 const EmailSetup = require('../services/emailSetupService');
 
 // Registration must not fail after the account exists, so a problem here is only logged.
@@ -242,8 +244,10 @@ class UserController {
                     challengeId: googleResult.challengeId,
                     email: googleResult.maskedEmail,
                     method: googleResult.method || 'email',
-                    msg: googleResult.method === 'emailsetup'
-                        ? 'Please add your email address to continue.'
+                    msg: googleResult.method === 'totp'
+                        ? 'Enter the code from your Authenticator app.'
+                        : googleResult.method === 'emailsetup'
+                            ? 'Please add your email address to continue.'
                         : `We sent a verification code to ${googleResult.maskedEmail}.`
                 });
             }
@@ -325,8 +329,10 @@ class UserController {
                     challengeId: loginResult.challengeId,
                     email: loginResult.maskedEmail,
                     method: loginResult.method || 'email',
-                    msg: loginResult.method === 'emailsetup'
-                        ? 'Please add your email address to continue.'
+                    msg: loginResult.method === 'totp'
+                        ? 'Enter the code from your Authenticator app.'
+                        : loginResult.method === 'emailsetup'
+                            ? 'Please add your email address to continue.'
                         : `We sent a verification code to ${loginResult.maskedEmail}.`
                 });
             }
@@ -774,6 +780,81 @@ class UserController {
             return res.status(statusCode).send({
                 msg: error.message || 'Something went wrong'
             });
+        }
+    }
+
+    // ---- Google Authenticator (TOTP) --------------------------------------------------------
+
+    totpError(res, error, label) {
+        const statusCode = error.statusCode || 500;
+        if (statusCode === 500) {
+            logger.error(`Error in ${label}: ${error.message}`, { stack: error.stack });
+        }
+        return res.status(statusCode).json({
+            message: statusCode === 500 ? 'Something went wrong. Please try again.' : error.message
+        });
+    }
+
+    async totpStatus(req, res) {
+        try {
+            return res.status(200).json({ status: true, ...(await TotpService.status(req.user_id)) });
+        } catch (error) {
+            return this.totpError(res, error, 'totpStatus');
+        }
+    }
+
+    async totpSetup(req, res) {
+        try {
+            const [user] = await userModel.findUserById(req.user_id);
+            const label = (user && (user.email || user.phone)) || req.user_id;
+            const { secret, qr } = await TotpService.beginSetup(req.user_id, label);
+            return res.status(200).json({ status: true, secret, qr });
+        } catch (error) {
+            return this.totpError(res, error, 'totpSetup');
+        }
+    }
+
+    async totpEnable(req, res) {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array(), message: errors.array()[0].msg });
+            }
+            const { backupCodes } = await TotpService.confirmEnable(req.user_id, req.body.code);
+            authLog.record(req, { userId: req.user_id, eventType: 'profile_update', method: 'password', details: 'Authenticator turned on' });
+            const [owner] = await userModel.findUserById(req.user_id);
+            DeviceTrust.sendAuthenticatorAlert(owner, req, 'on');
+            return res.status(200).json({ status: true, message: 'Authenticator is now on.', backupCodes });
+        } catch (error) {
+            return this.totpError(res, error, 'totpEnable');
+        }
+    }
+
+    async totpDisable(req, res) {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array(), message: errors.array()[0].msg });
+            }
+            const { password, code } = req.body;
+
+            const [user] = await userModel.findUserById(req.user_id);
+            const passwordOk = user && await bcrypt.compare(password, String(user.password).replace('$2y$', '$2b$'));
+            if (!passwordOk) {
+                return res.status(400).json({ message: 'Password is not correct.' });
+            }
+            if (!(await TotpService.verifyAny(req.user_id, code))) {
+                return res.status(400).json({ message: 'That code is not correct.' });
+            }
+
+            await TotpService.disable(req.user_id);
+            // Turning off a protection: no browser stays trusted except this one.
+            await DeviceTrust.clearOthersForUser(req.user_id, req);
+            authLog.record(req, { userId: req.user_id, eventType: 'profile_update', method: 'password', details: 'Authenticator turned off' });
+            DeviceTrust.sendAuthenticatorAlert(user, req, 'off');
+            return res.status(200).json({ status: true, message: 'Authenticator is now off.' });
+        } catch (error) {
+            return this.totpError(res, error, 'totpDisable');
         }
     }
 

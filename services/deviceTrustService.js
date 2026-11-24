@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const requestIp = require('request-ip');
 const trustedDeviceModel = require('../models/trustedDeviceModel');
 const userModel = require('../models/userModel');
+const totpModel = require('../models/totpModel');
 const sendMail = require('../helpers/sendMail');
 const browserName = require('../helpers/browserName');
 const { logger } = require('../logger');
@@ -107,6 +108,21 @@ class DeviceTrustService {
         const otp = String(crypto.randomInt(100000, 1000000));
         const ctx = this.requestContext(req);
 
+        // A user with Google Authenticator turned on enters the code from the app: nothing is mailed.
+        if (await totpModel.isEnabled(user.id)) {
+            await trustedDeviceModel.createChallenge({
+                challengeHash: sha256(challengeId),
+                userId: user.id,
+                method,
+                otpHash: this.otpHash(challengeId, otp), // never used; the column is required
+                ipAddress: ctx.ip,
+                browser: ctx.browser,
+                validMinutes: OTP_VALID_MINUTES,
+                secondFactor: 'totp',
+            });
+            return { trusted: false, challengeId, maskedEmail: this.maskEmail(email), method: 'totp' };
+        }
+
         await trustedDeviceModel.createChallenge({
             challengeHash: sha256(challengeId),
             userId: user.id,
@@ -123,7 +139,10 @@ class DeviceTrustService {
     }
 
     static async verify(challengeId, otp, req) {
-        if (!HEX_64.test(String(challengeId || '')) || !/^\d{6}$/.test(String(otp || ''))) {
+        // 6 digits (mailed code or Authenticator app), or a backup code (10 hex characters).
+        const otpText = String(otp || '').trim();
+        const looksRight = /^\d{6}$/.test(otpText) || /^[a-fA-F0-9]{5}-?[a-fA-F0-9]{5}$/.test(otpText);
+        if (!HEX_64.test(String(challengeId || '')) || !looksRight) {
             throw fail('Please enter the 6-digit code.', 400);
         }
 
@@ -143,9 +162,17 @@ class DeviceTrustService {
             throw expiredError();
         }
 
-        const expected = Buffer.from(challenge.otp_hash, 'hex');
-        const given = Buffer.from(this.otpHash(challengeId, otp), 'hex');
-        if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+        // Right if it matches the mailed code, or (Authenticator) the app's current code or an
+        // unused backup code. The guess was already counted above either way.
+        let codeOk;
+        if (challenge.second_factor === 'totp') {
+            codeOk = await require('./totpService').verifyAny(challenge.user_id, otpText);
+        } else {
+            const expected = Buffer.from(challenge.otp_hash, 'hex');
+            const given = Buffer.from(this.otpHash(challengeId, otpText), 'hex');
+            codeOk = expected.length === given.length && crypto.timingSafeEqual(expected, given);
+        }
+        if (!codeOk) {
             const left = OTP_MAX_ATTEMPTS - used;
             if (left <= 0) {
                 throw Object.assign(expiredError('Too many wrong codes. Please log in again.'), { userId: challenge.user_id });
@@ -225,6 +252,16 @@ class DeviceTrustService {
             throw fail('Your login Id is blocked, please contact the administrator.', 403);
         }
 
+        // A user with Google Authenticator on must still enter the app code: the new email proves the
+        // mailbox, not the person, so without this anyone who knows the password could add their own
+        // email and skip Authenticator. The browser is not trusted until that code is right.
+        if (this.isEnabled() && await totpModel.isEnabled(user.id)) {
+            const next = await this.gate(user, req, challenge.auth_method);
+            if (!next.trusted) {
+                return { gate: next, user };
+            }
+        }
+
         let deviceId = null;
         if (this.isEnabled()) {
             const ctx = this.requestContext(req);
@@ -243,6 +280,9 @@ class DeviceTrustService {
         const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
         if (!challenge || challenge.used_at || !challenge.is_live || (challenge.purpose || 'login') !== 'login') {
             throw expiredError();
+        }
+        if (challenge.second_factor === 'totp') {
+            throw fail('The code is in your Authenticator app. There is nothing to resend.', 400);
         }
         if (challenge.second_factor === 'emailsetup') {
             throw fail('Please add your email address first.', 400);
@@ -334,6 +374,30 @@ class DeviceTrustService {
             </div>`;
         Promise.resolve(sendMail(email, 'New device login on your Gaming Helper account', content))
             .catch((error) => logger.error(`New device alert email could not be sent: ${error.message}`));
+    }
+
+    // Tells the owner that Google Authenticator was turned on or off on their account, so a
+    // change they did not make is noticed. action is 'on' or 'off'. Never throws.
+    static sendAuthenticatorAlert(user, req, action) {
+        try {
+            const email = String((user && user.email) || '').trim();
+            if (!email) return;
+            const ctx = this.requestContext(req);
+            const when = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+            const turnedOn = action === 'on';
+            const content = `
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+                    <h2>Gaming Helper Online</h2>
+                    <p>Hello ${escapeHtml(user.first_name || 'there')},</p>
+                    <p>Google Authenticator was just turned <strong>${turnedOn ? 'on' : 'off'}</strong> on your account.</p>
+                    <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
+                    <p>If this was you, no action is needed. If not, change your password immediately and contact support.</p>
+                </div>`;
+            Promise.resolve(sendMail(email, `Google Authenticator turned ${turnedOn ? 'on' : 'off'} on your Gaming Helper account`, content))
+                .catch((error) => logger.error(`Authenticator alert email could not be sent: ${error.message}`));
+        } catch (error) {
+            logger.error(`Authenticator alert email could not be prepared: ${error.message}`);
+        }
     }
 }
 
