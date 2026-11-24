@@ -156,12 +156,17 @@ class TotpService {
         if (!(await this.verifyCode(userId, code))) {
             throw fail('That code is not correct. Check the code in your app and try again.', 400);
         }
+        return { backupCodes: await this.finishEnable(userId) };
+    }
+
+    // Turns Authenticator on and makes the backup codes. The caller has already checked a code.
+    static async finishEnable(userId) {
         if (!(await totpModel.enable(userId))) {
             throw fail('Start the setup first.', 400);
         }
         const codes = this.newBackupCodes();
         await totpModel.replaceBackupCodes(userId, codes.map((c) => this.backupHash(userId, c)));
-        return { backupCodes: codes };
+        return codes;
     }
 
     // A code from the app or a backup code. Used by the login step and by "turn off".
