@@ -44,9 +44,17 @@ class AuthLogModel {
         this.write(req, { userId, eventType, method, status: 'failed', reason, phone, details });
     }
 
-    // Never throws and is not awaited by callers: a logging problem must never stop a login.
+    // A failed password login that counts towards the login block (sql/20261128-login-block.sql). The caller
+    // WAITS for it, so the next attempt already sees this one, and it is never skipped by the per-IP
+    // write limit above: the block is decided from these rows.
+    static recordFailureNow(req, { method = 'password', reason, phone = null, userId = null }) {
+        return this.write(req, { userId, eventType: 'login', method, status: 'failed', reason, phone, details: null });
+    }
+
+    // Never throws: a logging problem must never stop a login. Callers that do not need the row to exist
+    // yet ignore the returned promise; the login block waits for it.
     static write(req, { userId = null, eventType, method, status, reason = null, phone = null, details = null }) {
-        (async () => {
+        return (async () => {
             const geo = clientGeo(req);
             let state = geo.state;
             let stateSource = state ? 'cloudflare' : null;

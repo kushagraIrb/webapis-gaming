@@ -1,5 +1,5 @@
-const net = require('net');
 const requestIp = require('request-ip');
+const { trustedClientIp } = require('./trustedIp');
 
 // The website sits behind Cloudflare, which puts the visitor's real address in CF-Connecting-IP
 // and replaces any copy of that header sent by the visitor. It is only trustworthy while the
@@ -9,10 +9,16 @@ const clean = (value, max) => {
     return text ? text.slice(0, max) : null;
 };
 
+// The visitor's address for the activity log and for the login block, so both always agree. When it can be
+// told for sure (see helpers/trustedIp.js) a faked CF-Connecting-IP is ignored; when it cannot, the old
+// best guess is kept so the log still has something.
 exports.clientIp = (req) => {
-    const fromCloudflare = String(req.headers['cf-connecting-ip'] || '').trim();
-    if (net.isIP(fromCloudflare)) {
-        return fromCloudflare;
+    const { ip, trusted } = trustedClientIp(req);
+    if (trusted) {
+        return ip;
+    }
+    if (ip) {
+        return ip;
     }
     return (requestIp.getClientIp(req) || '').replace(/^::ffff:/, '').slice(0, 45) || null;
 };
