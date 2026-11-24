@@ -88,18 +88,6 @@ class UserService {
         return { msg, accessToken, refreshToken, deviceId, userId: user.id, method };
     }
 
-    // New-device login for a user without Authenticator (email code switched off): they set it up here.
-    static async beginLoginTotpSetup(challengeId) {
-        return DeviceTrust.beginTotpSetup(challengeId);
-    }
-
-    static async completeLoginTotpSetup(challengeId, code, req) {
-        const { user, deviceId, method, backupCodes } = await DeviceTrust.completeTotpSetup(challengeId, code, req);
-        const { accessToken, refreshToken } = await this.issueSession(user.id);
-        const msg = method === 'google' ? 'Google login successful!' : 'Login successful!';
-        return { msg, accessToken, refreshToken, deviceId, userId: user.id, method, backupCodes };
-    }
-
     static async resendLoginOtp(challengeId) {
         return DeviceTrust.resend(challengeId);
     }
