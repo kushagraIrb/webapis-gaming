@@ -9,7 +9,8 @@ const { logger } = require('../logger');
 // A user with no email on the account must add one and prove it with a code mailed to it before they
 // can log in, change their bank accounts or withdraw. The code goes to the NEW address, is 6 digits,
 // valid 10 minutes, 5 guesses (counted atomically), 3 resends 60 seconds apart, single use, and the
-// email is only saved after the right code. Every change is written to tbl_user_email_log.
+// email is only saved after the right code. The code is kept in the existing otp_verified table
+// (purpose 'email_setup'), as the bank account codes are. Every change is written to tbl_user_email_log.
 //
 // Switched on with EMAIL_REQUIRED_ENABLED=true (needs sql/20261127-email-required.sql). Off = nothing here
 // changes how anything works.
@@ -42,14 +43,17 @@ class EmailSetupService {
 
     static normalize(email) {
         const text = String(email || '').trim().toLowerCase();
-        if (text.length > 255 || !EMAIL_FORMAT.test(text)) {
+        // tbl_registration.email (and otp_verified.email) are VARCHAR(50)
+        if (text.length > 50 || !EMAIL_FORMAT.test(text)) {
             throw fail('Please enter a valid email address.', 400);
         }
         return text;
     }
 
-    static otpHash(key, otp) {
-        return crypto.createHmac('sha256', String(process.env.JWT_SECRET)).update(`emailsetup:${key}:${otp}`).digest('hex');
+    static sameText(a, b) {
+        const left = Buffer.from(String(a || ''));
+        const right = Buffer.from(String(b || ''));
+        return left.length === right.length && crypto.timingSafeEqual(left, right);
     }
 
     // key = what identifies one attempt: a random id for a logged-in user, the login challenge for a login.
@@ -69,15 +73,13 @@ class EmailSetupService {
         }
 
         const otp = String(crypto.randomInt(100000, 1000000));
-        await emailVerifyModel.create({
-            verifyHash: sha256(key), userId, newEmail: email, otpHash: this.otpHash(key, otp), validMinutes: OTP_VALID_MINUTES,
-        });
+        await emailVerifyModel.create({ keyHash: sha256(key), userId, newEmail: email, otp });
         this.sendCodeMail(email, user.first_name, otp, clientIp(req));
         return { maskedEmail: DeviceTrust.maskEmail(email) };
     }
 
     static async resend(userId, key, req) {
-        const row = await emailVerifyModel.get(sha256(key));
+        const row = await emailVerifyModel.get(sha256(key), OTP_VALID_MINUTES);
         if (!row || Number(row.user_id) !== Number(userId) || row.used_at || !row.is_live) throw expired();
         if (row.resend_count >= OTP_MAX_RESENDS) throw expired('Too many codes requested. Please start again.');
         const wait = RESEND_GAP_SECONDS - row.seconds_since_sent;
@@ -85,7 +87,7 @@ class EmailSetupService {
 
         const [user] = await userModel.findUserById(userId);
         const otp = String(crypto.randomInt(100000, 1000000));
-        await emailVerifyModel.replaceOtp(row.id, this.otpHash(key, otp), OTP_VALID_MINUTES);
+        await emailVerifyModel.replaceCode(row.id, otp);
         this.sendCodeMail(row.new_email, user && user.first_name, otp, clientIp(req));
         return { maskedEmail: DeviceTrust.maskEmail(row.new_email) };
     }
@@ -93,20 +95,18 @@ class EmailSetupService {
     // Checks the code and saves the email. Returns the saved address.
     static async confirm(userId, key, otp, req) {
         if (!/^\d{6}$/.test(String(otp || '').trim())) throw fail('Please enter the 6-digit code.', 400);
-        const row = await emailVerifyModel.get(sha256(key));
+        const row = await emailVerifyModel.get(sha256(key), OTP_VALID_MINUTES);
         if (!row || Number(row.user_id) !== Number(userId) || row.used_at || !row.is_live) throw expired();
 
-        const used = await emailVerifyModel.reserveAttempt(row.id, OTP_MAX_ATTEMPTS);
+        const used = await emailVerifyModel.reserveAttempt(row.id, OTP_MAX_ATTEMPTS, OTP_VALID_MINUTES);
         if (used === null) throw expired('Too many wrong codes. Please start again.');
 
-        const expected = Buffer.from(row.otp_hash, 'hex');
-        const given = Buffer.from(this.otpHash(key, String(otp).trim()), 'hex');
-        if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+        if (!this.sameText(row.otp, String(otp).trim())) {
             const left = OTP_MAX_ATTEMPTS - used;
             if (left <= 0) throw expired('Too many wrong codes. Please start again.');
             throw fail(`Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.`, 400, { userId });
         }
-        if (!(await emailVerifyModel.consume(row.id))) throw expired();
+        if (!(await emailVerifyModel.consume(row.id, OTP_VALID_MINUTES))) throw expired();
 
         if (!(await emailVerifyModel.setEmailIfEmpty(userId, row.new_email))) {
             throw fail('This email could not be saved. It may already be used by another account.', 409);

@@ -74,7 +74,7 @@ class DeviceTrustService {
     static async gate(user, req, method) {
         // A user with no email must add and verify one first, whatever else would apply. The login waits
         // as a pending 'emailsetup' challenge: no session until the code sent to the new email is right.
-        if (require('./emailSetupService').isEnabled() && !String(user.email || '').trim()) {
+        if ((this.isEnabled() || require('./emailSetupService').isEnabled()) && !String(user.email || '').trim()) {
             const challengeId = crypto.randomBytes(32).toString('hex');
             const ctx = this.requestContext(req);
             await trustedDeviceModel.createChallenge({
