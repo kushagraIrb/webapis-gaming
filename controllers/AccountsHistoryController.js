@@ -97,6 +97,7 @@ class AccountHistoryController {
                     status: false,
                     message: error.message,
                     ...(error.restartOtp && { restartOtp: true }),
+                    ...(error.emailRequired && { emailRequired: true }),
                 });
             }
 
@@ -179,6 +180,7 @@ class AccountHistoryController {
                     status: false,
                     message: error.message,
                     ...(error.restartOtp && { restartOtp: true }),
+                    ...(error.emailRequired && { emailRequired: true }),
                 });
             }
 
@@ -209,6 +211,7 @@ class AccountHistoryController {
                     status: false,
                     message: error.message,
                     ...(error.restartOtp && { restartOtp: true }),
+                    ...(error.emailRequired && { emailRequired: true }),
                 });
             }
 

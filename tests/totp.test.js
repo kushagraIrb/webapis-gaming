@@ -254,3 +254,48 @@ test('email code stays until Authenticator is on: no setup step at login, the em
   assert.ok(done.accessToken, 'a session is issued straight away');
   assert.strictEqual(done.setupRequired, undefined);
 });
+
+// ---- a user with no email (add and verify one at login) meets Authenticator ---------------------
+
+const codeInLastMail = () => {
+  const match = sent[sent.length - 1].html.match(/>\s*(\d{6})\s*</);
+  return match && match[1];
+};
+
+async function addEmailAtLogin(user, first) {
+  const newEmail = `added-${Date.now()}-${user.id}@invalid.local`;
+  await userService.beginLoginEmailSetup(first.challengeId, newEmail, makeReq());
+  assert.strictEqual(sent[sent.length - 1].to, newEmail, 'the code goes to the NEW address');
+  return userService.completeLoginEmailSetup(first.challengeId, codeInLastMail(), makeReq());
+}
+
+test('no email + Authenticator on: adding an email does NOT finish the login, the app code is still needed', async () => {
+  const user = await makeUser();
+  const { secret } = await enrol(user);
+  await db.query("UPDATE tbl_registration SET email = '' WHERE id = ?", [user.id]);
+
+  const first = await login(user, makeReq());
+  assert.strictEqual(first.method, 'emailsetup');
+
+  const afterEmail = await addEmailAtLogin(user, first);
+  assert.strictEqual(afterEmail.otpRequired, true, 'a further step is needed');
+  assert.strictEqual(afterEmail.method, 'totp');
+  assert.strictEqual(afterEmail.accessToken, undefined, 'no session from the new email alone');
+  const [trusted] = await db.query('SELECT id FROM tbl_user_trusted_device WHERE user_id = ?', [user.id]);
+  assert.strictEqual(trusted.length, 0, 'the browser is not trusted yet');
+
+  await assert.rejects(userService.completeDeviceLogin(afterEmail.challengeId, '000000', makeReq()), (e) => e.statusCode === 400);
+  const done = await userService.completeDeviceLogin(afterEmail.challengeId, appCode(secret, 0), makeReq());
+  assert.ok(done.accessToken, 'the app code finishes the login');
+});
+
+test('no email and no Authenticator: adding an email finishes the login, as before', async () => {
+  const user = await makeUser();
+  await db.query("UPDATE tbl_registration SET email = '' WHERE id = ?", [user.id]);
+
+  const first = await login(user, makeReq());
+  assert.strictEqual(first.method, 'emailsetup');
+  const done = await addEmailAtLogin(user, first);
+  assert.ok(done.accessToken, 'a session is issued');
+  assert.match(done.deviceId, /^[a-f0-9]{64}$/);
+});
