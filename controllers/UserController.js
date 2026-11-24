@@ -245,7 +245,9 @@ class UserController {
                     method: googleResult.method || 'email',
                     msg: googleResult.method === 'totp'
                         ? 'Enter the code from your Authenticator app.'
-                        : `We sent a verification code to ${googleResult.maskedEmail}.`
+                        : googleResult.method === 'totp_setup'
+                            ? 'Set up Google Authenticator to continue.'
+                            : `We sent a verification code to ${googleResult.maskedEmail}.`
                 });
             }
 
@@ -328,7 +330,9 @@ class UserController {
                     method: loginResult.method || 'email',
                     msg: loginResult.method === 'totp'
                         ? 'Enter the code from your Authenticator app.'
-                        : `We sent a verification code to ${loginResult.maskedEmail}.`
+                        : loginResult.method === 'totp_setup'
+                            ? 'Set up Google Authenticator to continue.'
+                            : `We sent a verification code to ${loginResult.maskedEmail}.`
                 });
             }
 
@@ -412,6 +416,49 @@ class UserController {
                 ...(error.restartLogin && { restartLogin: true })
             });
         }
+    }
+
+    // Login for a user without Authenticator, with the email code switched off: they set it up now.
+    async loginTotpSetupBegin(req, res) {
+        try {
+            const { secret, qr } = await userService.beginLoginTotpSetup((req.body || {}).challengeId);
+            return res.status(200).send({ status: true, secret, qr });
+        } catch (error) {
+            return this.loginTotpError(res, error, 'loginTotpSetupBegin');
+        }
+    }
+
+    async loginTotpSetupConfirm(req, res) {
+        try {
+            const { challengeId, code } = req.body || {};
+            const { msg, accessToken, refreshToken, deviceId, userId, method, backupCodes } =
+                await userService.completeLoginTotpSetup(challengeId, code, req);
+            authLog.record(req, { userId, eventType: 'login', method: method === 'google' ? 'google' : 'otp' });
+
+            res.cookie('refreshToken', refreshToken, {
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 30 * 24 * 60 * 60 * 1000
+            });
+
+            return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId, backupCodes });
+        } catch (error) {
+            if ((error.statusCode || 500) !== 500 && error.userId) {
+                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
+            }
+            return this.loginTotpError(res, error, 'loginTotpSetupConfirm');
+        }
+    }
+
+    loginTotpError(res, error, label) {
+        const statusCode = error.statusCode || 500;
+        if (statusCode === 500) {
+            logger.error(`Error in ${label}: ${error.message}`, { stack: error.stack });
+        }
+        return res.status(statusCode).send({
+            msg: statusCode === 500 ? 'Something went wrong' : error.message,
+            ...(error.restartLogin && { restartLogin: true })
+        });
     }
 
     async resendLoginOtp(req, res) {

@@ -40,6 +40,13 @@ class DeviceTrustService {
         return String(process.env.NEW_DEVICE_OTP_ENABLED || '').toLowerCase() === 'true';
     }
 
+    // NEW_DEVICE_EMAIL_OTP_ENABLED=false turns the emailed code off for new-device logins: only
+    // Google Authenticator is used, and a user without it is made to set it up. Unset or anything
+    // else keeps the emailed code for users who have not turned Authenticator on.
+    static isEmailCodeEnabled() {
+        return String(process.env.NEW_DEVICE_EMAIL_OTP_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+    }
+
     static requestContext(req) {
         return {
             ip: (requestIp.getClientIp(req) || '').replace(/^::ffff:/, '').slice(0, 45),
@@ -76,16 +83,17 @@ class DeviceTrustService {
         }
 
         const email = String(user.email || '').trim();
-        if (!email) {
-            throw fail('We could not find an email on your account to verify this device. Please contact support.', 403);
-        }
-
         const challengeId = crypto.randomBytes(32).toString('hex');
         const otp = String(crypto.randomInt(100000, 1000000));
         const ctx = this.requestContext(req);
+        const maskedEmail = email ? this.maskEmail(email) : '';
 
         // A user with Google Authenticator turned on enters the code from the app: nothing is mailed.
-        if (await totpModel.isEnabled(user.id)) {
+        // With the email code switched off, a user who has not set it up yet must set it up now
+        // ('totp_setup'): no session is issued until they have entered a first correct code.
+        const hasTotp = await totpModel.isEnabled(user.id);
+        if (hasTotp || !this.isEmailCodeEnabled()) {
+            const secondFactor = hasTotp ? 'totp' : 'totp_setup';
             await trustedDeviceModel.createChallenge({
                 challengeHash: sha256(challengeId),
                 userId: user.id,
@@ -94,9 +102,13 @@ class DeviceTrustService {
                 ipAddress: ctx.ip,
                 browser: ctx.browser,
                 validMinutes: OTP_VALID_MINUTES,
-                secondFactor: 'totp',
+                secondFactor,
             });
-            return { trusted: false, challengeId, maskedEmail: this.maskEmail(email), method: 'totp' };
+            return { trusted: false, challengeId, maskedEmail, method: secondFactor };
+        }
+
+        if (!email) {
+            throw fail('We could not find an email on your account to verify this device. Please contact support.', 403);
         }
 
         await trustedDeviceModel.createChallenge({
@@ -126,7 +138,8 @@ class DeviceTrustService {
         // A code issued for a bank account change must never log anyone in (purpose column is
         // missing until sql/20261125-account-otp-challenge-columns.sql runs: that means 'login').
         if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
-            || (challenge.purpose || 'login') !== 'login') {
+            || (challenge.purpose || 'login') !== 'login'
+            || challenge.second_factor === 'totp_setup') { // a setup challenge is finished by completeTotpSetup
             throw expiredError();
         }
 
@@ -173,6 +186,74 @@ class DeviceTrustService {
         return { user, deviceId, method: challenge.auth_method };
     }
 
+    // A pending login that must set Authenticator up first. The challenge id (256 random bits, only
+    // handed out after the password or Google check) is what proves who is asking.
+    static async loadSetupChallenge(challengeId) {
+        if (!HEX_64.test(String(challengeId || ''))) {
+            throw expiredError();
+        }
+        const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
+        if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
+            || (challenge.purpose || 'login') !== 'login' || challenge.second_factor !== 'totp_setup') {
+            throw expiredError();
+        }
+        return challenge;
+    }
+
+    // Step 1 of setting Authenticator up at login: a fresh secret and QR code for this user.
+    static async beginTotpSetup(challengeId) {
+        const TotpService = require('./totpService');
+        const challenge = await this.loadSetupChallenge(challengeId);
+        const [user] = await userModel.findUserById(challenge.user_id);
+        if (!user) {
+            throw expiredError();
+        }
+        const { secret, qr } = await TotpService.beginSetup(user.id, user.email || user.phone);
+        return { secret, qr };
+    }
+
+    // Step 2: the first code from the app proves the phone is set up. Authenticator is turned on,
+    // backup codes are made, this browser is trusted and the login is finished.
+    static async completeTotpSetup(challengeId, code, req) {
+        const TotpService = require('./totpService');
+        const codeText = String(code || '').trim();
+        if (!/^\d{6}$/.test(codeText)) {
+            throw fail('Please enter the 6-digit code.', 400);
+        }
+        const challenge = await this.loadSetupChallenge(challengeId);
+
+        // Counted first and atomically, like a normal login code.
+        const used = await trustedDeviceModel.reserveAttempt(challenge.id, OTP_MAX_ATTEMPTS);
+        if (used === null) {
+            throw expiredError();
+        }
+        if (!(await TotpService.verifyCode(challenge.user_id, codeText))) {
+            const left = OTP_MAX_ATTEMPTS - used;
+            if (left <= 0) {
+                throw Object.assign(expiredError('Too many wrong codes. Please log in again.'), { userId: challenge.user_id });
+            }
+            throw fail(`Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.`, 400, { userId: challenge.user_id });
+        }
+        if (!(await trustedDeviceModel.consume(challenge.id))) {
+            throw expiredError();
+        }
+
+        const [user] = await userModel.findUserById(challenge.user_id);
+        if (!user || user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
+            throw fail('Your login Id is blocked, please contact the administrator.', 403);
+        }
+
+        // The code was already checked above, so only the switch-on and the backup codes remain.
+        const backupCodes = await TotpService.finishEnable(user.id);
+
+        const ctx = this.requestContext(req);
+        const deviceId = crypto.randomBytes(32).toString('hex');
+        await trustedDeviceModel.addTrusted(user.id, sha256(deviceId), ctx.browser, ctx.ip);
+        this.sendNewDeviceAlert(user, ctx);
+
+        return { user, deviceId, method: challenge.auth_method, backupCodes };
+    }
+
     static async resend(challengeId) {
         if (!HEX_64.test(String(challengeId || ''))) {
             throw expiredError();
@@ -182,7 +263,7 @@ class DeviceTrustService {
         if (!challenge || challenge.used_at || !challenge.is_live || (challenge.purpose || 'login') !== 'login') {
             throw expiredError();
         }
-        if (challenge.second_factor === 'totp') {
+        if (challenge.second_factor === 'totp' || challenge.second_factor === 'totp_setup') {
             throw fail('The code is in your Authenticator app. There is nothing to resend.', 400);
         }
         if (challenge.resend_count >= OTP_MAX_RESENDS) {
