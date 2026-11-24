@@ -38,15 +38,18 @@ class TrustedDeviceModel {
         await db.promise().query('DELETE FROM tbl_login_challenge WHERE user_id = ?', [userId]);
     }
 
-    static async createChallenge({ challengeHash, userId, method, otpHash, ipAddress, browser, validMinutes }) {
+    // secondFactor 'emailsetup' (needs the second_factor column, added by sql/20261127-email-required.sql) marks a
+    // login waiting for the user's email; the default 'email' leaves the old behaviour as it was.
+    static async createChallenge({ challengeHash, userId, method, otpHash, ipAddress, browser, validMinutes, secondFactor = 'email' }) {
         await db.promise().query(
             'DELETE FROM tbl_login_challenge WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)'
         );
+        const useFactor = secondFactor !== 'email';
         const [result] = await db.promise().query(
             `INSERT INTO tbl_login_challenge
-             (challenge_hash, user_id, auth_method, otp_hash, last_sent_at, expires_at, ip_address, browser)
-             VALUES (?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? MINUTE), ?, ?)`,
-            [challengeHash, userId, method, otpHash, validMinutes, ipAddress, browser]
+             (challenge_hash, user_id, auth_method, otp_hash, last_sent_at, expires_at, ip_address, browser${useFactor ? ', second_factor' : ''})
+             VALUES (?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? MINUTE), ?, ?${useFactor ? ', ?' : ''})`,
+            [challengeHash, userId, method, otpHash, validMinutes, ipAddress, browser, ...(useFactor ? [secondFactor] : [])]
         );
         return result.insertId;
     }

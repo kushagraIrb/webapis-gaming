@@ -127,7 +127,7 @@ class AccountOtpService {
         const [user] = await userModel.findUserById(userId);
         const email = String((user && user.email) || '').trim();
         if (!email) {
-            throw fail('We could not find an email on your account to send the code to. Please contact support.', 403);
+            throw fail('We could not find an email on your account to send the code to. Please add your email first.', 403, { emailRequired: true });
         }
 
         const otp = String(crypto.randomInt(100000, 1000000));

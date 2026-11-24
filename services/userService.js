@@ -64,7 +64,7 @@ class UserService {
         if (req) {
             const gate = await DeviceTrust.gate(user, req, 'google');
             if (!gate.trusted) {
-                return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail };
+                return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail, method: gate.method };
             }
         }
 
@@ -86,6 +86,26 @@ class UserService {
         const { accessToken, refreshToken } = await this.issueSession(user.id);
         const msg = method === 'google' ? 'Google login successful!' : 'Login successful!';
         return { msg, accessToken, refreshToken, deviceId, userId: user.id, method };
+    }
+
+    // Login by a user with no email: add it and prove it with a code first (see DeviceTrust.completeEmailSetup).
+    static async beginLoginEmailSetup(challengeId, email, req) {
+        return DeviceTrust.beginEmailSetup(challengeId, email, req);
+    }
+
+    static async resendLoginEmailSetup(challengeId, req) {
+        return DeviceTrust.resendEmailSetup(challengeId, req);
+    }
+
+    static async completeLoginEmailSetup(challengeId, code, req) {
+        const result = await DeviceTrust.completeEmailSetup(challengeId, code, req);
+        if (result.gate) {
+            // A further step is needed after the email: hand back that next step.
+            return { otpRequired: true, challengeId: result.gate.challengeId, maskedEmail: result.gate.maskedEmail, method: result.gate.method, userId: result.user.id };
+        }
+        const { accessToken, refreshToken } = await this.issueSession(result.user.id);
+        const msg = result.method === 'google' ? 'Google login successful!' : 'Login successful!';
+        return { msg, accessToken, refreshToken, deviceId: result.deviceId, userId: result.user.id, method: result.method };
     }
 
     static async resendLoginOtp(challengeId) {
@@ -516,7 +536,7 @@ class UserService {
         // A browser this account has not passed the email OTP on gets no session yet.
         const gate = await DeviceTrust.gate(user, req, 'password');
         if (!gate.trusted) {
-            return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail };
+            return { otpRequired: true, challengeId: gate.challengeId, maskedEmail: gate.maskedEmail, method: gate.method };
         }
 
         // Generate a new access token

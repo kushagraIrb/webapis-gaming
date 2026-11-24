@@ -284,9 +284,12 @@ test('a user blocked after the code was sent cannot finish the login', async () 
   );
 });
 
-test('an account with no email cannot get a session from an unknown device', async () => {
+test('an account with no email gets no session from an unknown device: it is asked for an email first', async () => {
   const user = await makeUser({ email: '' });
-  await assert.rejects(login(user, makeReq()), (e) => e.statusCode === 403);
+  const result = await login(user, makeReq());
+  assert.equal(result.otpRequired, true);
+  assert.equal(result.method, 'emailsetup');
+  assert.ok(!result.newAccessToken && !result.accessToken, 'no session until the email is verified');
 });
 
 test('HTTP: 202 with a challenge, then verify-otp returns the session and device id', async () => {

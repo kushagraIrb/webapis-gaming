@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const withdrawalController  = require('../controllers/WithdrawalController');
 
+const requireEmail = require('../helpers/requireEmail');
 const authenticateToken = require('../helpers/authToken');
 
 router.use(express.json());
@@ -18,14 +19,14 @@ router.use(authenticateToken);
 router.get('/get-date', withdrawalController.getLastWithdrawalDateById);
 
 /******** Withdrawal ********/
-router.post('/save-request', withdrawalController.saveWithdrawal);
+router.post('/save-request', requireEmail, withdrawalController.saveWithdrawal);
 router.get('/history', withdrawalController.listWithdrawalHistory);
 router.get('/cancel-request/:id', withdrawalController.cancelRequest);
 /******** End Withdrawal ********/
 
 /******** Fast withdrawal ********/
 router.get('/get-durationTimer', withdrawalController.getDurationTimer);
-router.post('/save-fast-request', withdrawalController.saveFastWithdrawal);
+router.post('/save-fast-request', requireEmail, withdrawalController.saveFastWithdrawal);
 /******** End Fast withdrawal ********/
 
 router.get('/get-pending-requests-count', withdrawalController.getPendingRequestsCount);

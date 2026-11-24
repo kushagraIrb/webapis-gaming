@@ -71,6 +71,24 @@ class DeviceTrustService {
     // Call after the password (or Google credential) has been accepted and the account checked.
     // Returns { trusted: true } to carry on with the normal login, or a pending challenge.
     static async gate(user, req, method) {
+        // A user with no email must add and verify one first, whatever else would apply. The login waits
+        // as a pending 'emailsetup' challenge: no session until the code sent to the new email is right.
+        if ((this.isEnabled() || require('./emailSetupService').isEnabled()) && !String(user.email || '').trim()) {
+            const challengeId = crypto.randomBytes(32).toString('hex');
+            const ctx = this.requestContext(req);
+            await trustedDeviceModel.createChallenge({
+                challengeHash: sha256(challengeId),
+                userId: user.id,
+                method,
+                otpHash: this.otpHash(challengeId, '000000'), // never used; the column is required
+                ipAddress: ctx.ip,
+                browser: ctx.browser,
+                validMinutes: OTP_VALID_MINUTES,
+                secondFactor: 'emailsetup',
+            });
+            return { trusted: false, challengeId, maskedEmail: '', method: 'emailsetup' };
+        }
+
         if (!this.isEnabled()) {
             return { trusted: true };
         }
@@ -101,7 +119,7 @@ class DeviceTrustService {
 
         this.sendCodeMail(email, user.first_name, otp, ctx);
 
-        return { trusted: false, challengeId, maskedEmail: this.maskEmail(email) };
+        return { trusted: false, challengeId, maskedEmail: this.maskEmail(email), method: 'email' };
     }
 
     static async verify(challengeId, otp, req) {
@@ -113,7 +131,8 @@ class DeviceTrustService {
         // A code issued for a bank account change must never log anyone in (purpose column is
         // missing until sql/20261125-account-otp-challenge-columns.sql runs: that means 'login').
         if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
-            || (challenge.purpose || 'login') !== 'login') {
+            || (challenge.purpose || 'login') !== 'login'
+            || challenge.second_factor === 'emailsetup') { // an email one is finished by completeEmailSetup
             throw expiredError();
         }
 
@@ -152,6 +171,70 @@ class DeviceTrustService {
         return { user, deviceId, method: challenge.auth_method };
     }
 
+    // ---- a login by a user with no email: add the email, prove it, then carry on ---------------------
+
+    static async loadEmailSetupChallenge(challengeId) {
+        if (!HEX_64.test(String(challengeId || ''))) {
+            throw expiredError();
+        }
+        const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
+        if (!challenge || challenge.used_at || !challenge.is_live || challenge.attempts >= OTP_MAX_ATTEMPTS
+            || (challenge.purpose || 'login') !== 'login' || challenge.second_factor !== 'emailsetup') {
+            throw expiredError();
+        }
+        return challenge;
+    }
+
+    // Step 1: the user types the email; a code goes to it.
+    static async beginEmailSetup(challengeId, email, req) {
+        const challenge = await this.loadEmailSetupChallenge(challengeId);
+        return require('./emailSetupService').start(challenge.user_id, `login:${challengeId}`, email, req);
+    }
+
+    static async resendEmailSetup(challengeId, req) {
+        const challenge = await this.loadEmailSetupChallenge(challengeId);
+        return require('./emailSetupService').resend(challenge.user_id, `login:${challengeId}`, req);
+    }
+
+    // Step 2: the right code saves the email. A user with Authenticator (or only-Authenticator mode)
+    // still goes through it as normal; anyone else has just proved this browser by email, so it is
+    // trusted and the login finishes. Returns { gate } (a further step) or { user, deviceId, method }.
+    static async completeEmailSetup(challengeId, code, req) {
+        const EmailSetup = require('./emailSetupService');
+        const challenge = await this.loadEmailSetupChallenge(challengeId);
+
+        // The login challenge counts every try too, so it cannot be hammered with fresh emails.
+        const used = await trustedDeviceModel.reserveAttempt(challenge.id, OTP_MAX_ATTEMPTS);
+        if (used === null) {
+            throw expiredError();
+        }
+        try {
+            await EmailSetup.confirm(challenge.user_id, `login:${challengeId}`, code, req);
+        } catch (error) {
+            if (!error.userId && !error.restartEmailSetup) error.userId = challenge.user_id;
+            if (error.restartEmailSetup) error.restartLogin = true;
+            error.userId = error.userId || challenge.user_id;
+            throw error;
+        }
+        if (!(await trustedDeviceModel.consume(challenge.id))) {
+            throw expiredError();
+        }
+
+        const [user] = await userModel.findUserById(challenge.user_id);
+        if (!user || user.is_verified !== 1 || user.status !== 1 || user.ip_status !== 1) {
+            throw fail('Your login Id is blocked, please contact the administrator.', 403);
+        }
+
+        let deviceId = null;
+        if (this.isEnabled()) {
+            const ctx = this.requestContext(req);
+            deviceId = crypto.randomBytes(32).toString('hex');
+            await trustedDeviceModel.addTrusted(user.id, sha256(deviceId), ctx.browser, ctx.ip);
+            this.sendNewDeviceAlert(user, ctx);
+        }
+        return { user, deviceId, method: challenge.auth_method };
+    }
+
     static async resend(challengeId) {
         if (!HEX_64.test(String(challengeId || ''))) {
             throw expiredError();
@@ -160,6 +243,9 @@ class DeviceTrustService {
         const challenge = await trustedDeviceModel.getChallenge(sha256(challengeId));
         if (!challenge || challenge.used_at || !challenge.is_live || (challenge.purpose || 'login') !== 'login') {
             throw expiredError();
+        }
+        if (challenge.second_factor === 'emailsetup') {
+            throw fail('Please add your email address first.', 400);
         }
         if (challenge.resend_count >= OTP_MAX_RESENDS) {
             throw expiredError('Too many codes requested. Please log in again.');

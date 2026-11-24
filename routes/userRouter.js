@@ -6,6 +6,7 @@ const upload = require('../helpers/uploads');
 const { otpValidation, signUpValidation, loginValidation, changePwdValidation, editProfileValidation, addAccountValidation } = require('../helpers/userValidation');
 const authenticateToken = require('../helpers/authToken');
 const userController = require('../controllers/UserController');
+const requireEmail = require('../helpers/requireEmail');
 const limits = require('../helpers/rateLimiters');
 
 router.use(express.json());
@@ -19,6 +20,9 @@ router.post('/register', limits.registerPerIp, limits.registerPerTarget, signUpV
 router.post('/login', limits.loginPerIp, limits.loginPerAccount, loginValidation, userController.login);
 router.post('/login/verify-otp', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.verifyLoginOtp);
 router.post('/login/resend-otp', limits.loginOtpPerIp, limits.loginOtpResend, userController.resendLoginOtp);
+router.post('/login/email-setup/send', limits.loginOtpPerIp, limits.loginOtpResend, userController.loginEmailSetupSend.bind(userController));
+router.post('/login/email-setup/resend', limits.loginOtpPerIp, limits.loginOtpResend, userController.loginEmailSetupResend.bind(userController));
+router.post('/login/email-setup/confirm', limits.loginOtpPerIp, limits.loginOtpPerChallenge, userController.loginEmailSetupConfirm.bind(userController));
 router.post('/google/register', userController.googleRegister);
 router.post('/google/login', userController.googleLogin);
 router.post('/reset-link', limits.passwordReset, userController.resetLink);
@@ -33,7 +37,10 @@ router.post('/details', userController.fetchUserDetailsByJwtToken);
 router.post('/change-password', changePwdValidation, userController.changePassword);
 // router.post('/dashboard', userController.userDashboard);
 router.post('/edit-profile', upload.single('profile_image'), editProfileValidation, userController.editProfile);
-router.post('/add-account', limits.accountOtpPerUser, addAccountValidation, userController.addAccount);
+router.post('/email-setup/send', limits.accountOtpResend, userController.emailSetupSend.bind(userController));
+router.post('/email-setup/resend', limits.accountOtpResend, userController.emailSetupResend.bind(userController));
+router.post('/email-setup/confirm', limits.accountOtpPerUser, userController.emailSetupConfirm.bind(userController));
+router.post('/add-account', limits.accountOtpPerUser, requireEmail, addAccountValidation, userController.addAccount);
 router.get('/get-account-details', userController.getAccount);
 router.get('/logout', userController.logout);
 
