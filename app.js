@@ -12,6 +12,7 @@ const { logger, deleteOldLogs } = require('./logger.js');
 const db = require('./config/database.js');
 const setupRoutes = require('./config/routes.js');
 const { checkIPAccess, checkIPAccessStatus } = require('./helpers/checkIpAccess.js');
+const { blockedIpGuard } = require('./helpers/loginBlockGuard');
 
 const whitelist = ['/uploads', '/api/contact-us', '/api/home-slider', '/api/about-us', '/api/rules', '/api/blogs', '/api/events'];
 
@@ -100,7 +101,8 @@ if (cluster.isMaster) {
         if (whitelist.some(path => req.path.startsWith(path))) {
             return next();
         }
-        return checkIPAccess(req, res, next);
+        // An IP blocked for too many failed logins is refused everywhere (HTTP 429) for an hour.
+        return blockedIpGuard(req, res, (err) => (err ? next(err) : checkIPAccess(req, res, next)));
     });
 
     setupRoutes(app);

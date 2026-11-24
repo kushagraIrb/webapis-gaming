@@ -18,7 +18,7 @@ exports.signUpValidation = [
 
 exports.loginValidation = [
     check('phone','Phone is required').not().isEmpty(),
-    check('password','Password is required').isLength({ min:6 })
+    check('password','Password must be at least 6 characters').isLength({ min:6 })
 ]
 
 exports.changePwdValidation = [

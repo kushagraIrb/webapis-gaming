@@ -8,6 +8,7 @@ const userModel = require('../models/userModel');
 const DeviceTrust = require('../services/deviceTrustService');
 const AccountOtp = require('../services/accountOtpService');
 const TotpService = require('../services/totpService');
+const LoginBlock = require('../services/loginBlockService');
 const bcrypt = require('bcrypt');
 const EmailSetup = require('../services/emailSetupService');
 
@@ -291,6 +292,13 @@ class UserController {
         const phone = req.body.phone || null;
         const password = req.body.password || null;
 
+        // Blocked IP or blocked phone (too many failed logins): refused before the password is even looked at.
+        const blocked = await LoginBlock.check(req, phone);
+        if (blocked) {
+            authLog.recordFailure(req, { method: 'password', reason: 'blocked', phone });
+            return res.status(429).json(LoginBlock.body(blocked));
+        }
+
         // Prepare login query once (if phone exists)
         const loginQuery = phone ? userModel.getLoginQuery(phone) : null;
     
@@ -363,8 +371,18 @@ class UserController {
             apiResponseMsg = error.message || 'Login failed';
 
             // A refused login (wrong password, unknown phone, blocked account) goes in the activity log.
+            // A wrong password or unknown phone also counts towards the login block: that row is written
+            // before the answer is sent, and if it was the last attempt allowed the IP and phones are blocked.
+            let newBlock = null;
+            let attemptsLeft = null;
             if (statusCode !== 500) {
-                authLog.recordFailure(req, { method: 'password', reason: req.authFailReason || apiResponseMsg, phone });
+                const reason = req.authFailReason || apiResponseMsg;
+                if (LoginBlock.COUNTED_REASONS.includes(reason)) {
+                    await authLog.recordFailureNow(req, { method: 'password', reason, phone });
+                    ({ block: newBlock, attemptsLeft } = await LoginBlock.afterFailedAttempt(req));
+                } else {
+                    authLog.recordFailure(req, { method: 'password', reason, phone });
+                }
             }
 
             // A failure to write the login log must never stop the response being sent.
@@ -381,7 +399,17 @@ class UserController {
             if (statusCode === 500) {
                 logger.error(`Login error: ${error.message}`, { stack: error.stack });
             }
-        
+
+            // That was the last attempt: the answer is the block, not "wrong password".
+            if (newBlock) {
+                return res.status(429).send(LoginBlock.body(newBlock));
+            }
+
+            // A wrong password that did not block yet: say how many tries are left.
+            if (attemptsLeft !== null && statusCode === 401) {
+                return res.status(401).send({ msg: LoginBlock.attemptsMessage(apiResponseMsg, attemptsLeft), attemptsLeft });
+            }
+
             return res.status(statusCode).send({ msg: apiResponseMsg });
         }
     }
