@@ -43,6 +43,8 @@ module.exports = {
     // the database (5), which is the real limit because these counters are per worker.
     accountOtpPerUser: make({ windowMinutes: 15, max: 30, key: (req) => `account-otp:${req.user_id || clientIp(req)}`, message: 'Too many attempts. Please wait a while and try again.' }),
     accountOtpResend: make({ windowMinutes: 15, max: 10, key: (req) => `account-otp-resend:${req.user_id || clientIp(req)}`, message: 'Too many codes requested. Please wait a while and try again.' }),
+    // Authenticator setup, turn on and turn off (behind the login check, so per user).
+    totpPerUser: make({ windowMinutes: 15, max: 30, key: (req) => `totp:${req.user_id || clientIp(req)}`, message: 'Too many attempts. Please wait a while and try again.' }),
     // Sending OTP emails: 5 per 15 minutes per email address, 30 per IP.
     otpPerTarget: make({ windowMinutes: 15, max: 5, key: (req) => `otp:${clientIp(req)}:${field(req.body && req.body.email)}`, message: 'Too many verification codes requested. Please wait and try again.' }),
     otpPerIp: make({ windowMinutes: 15, max: 30, key: (req) => `otp-ip:${clientIp(req)}` }),
