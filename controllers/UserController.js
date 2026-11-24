@@ -6,6 +6,7 @@ const requestIp = require('request-ip');
 const userModel = require('../models/userModel');
 const DeviceTrust = require('../services/deviceTrustService');
 const AccountOtp = require('../services/accountOtpService');
+const EmailSetup = require('../services/emailSetupService');
 const authLog = require('../models/authLogModel');
 const TotpService = require('../services/totpService');
 const bcrypt = require('bcrypt');
@@ -328,7 +329,9 @@ class UserController {
                     challengeId: loginResult.challengeId,
                     email: loginResult.maskedEmail,
                     method: loginResult.method || 'email',
-                    msg: loginResult.method === 'totp'
+                    msg: loginResult.method === 'emailsetup'
+                        ? 'Please add your email address to continue.'
+                        : loginResult.method === 'totp'
                         ? 'Enter the code from your Authenticator app.'
                         : loginResult.method === 'totp_setup'
                             ? 'Set up Google Authenticator to continue.'
@@ -448,6 +451,112 @@ class UserController {
             }
             return this.loginTotpError(res, error, 'loginTotpSetupConfirm');
         }
+    }
+
+    // ---- email for users who have none --------------------------------------------------------
+
+    emailSetupError(res, error, label) {
+        const statusCode = error.statusCode || 500;
+        if (statusCode === 500) {
+            logger.error(`Error in ${label}: ${error.message}`, { stack: error.stack });
+        }
+        return res.status(statusCode).send({
+            msg: statusCode === 500 ? 'Something went wrong' : error.message,
+            ...(error.restartLogin && { restartLogin: true }),
+            ...(error.restartEmailSetup && { restartEmailSetup: true }),
+            ...(error.emailRequired && { emailRequired: true })
+        });
+    }
+
+    // Login: the pending login (challengeId) proves who is asking.
+    async loginEmailSetupSend(req, res) {
+        try {
+            const { challengeId, email } = req.body || {};
+            const { maskedEmail } = await userService.beginLoginEmailSetup(challengeId, email, req);
+            return res.status(200).send({ msg: `We sent a verification code to ${maskedEmail}.`, email: maskedEmail });
+        } catch (error) {
+            return this.emailSetupError(res, error, 'loginEmailSetupSend');
+        }
+    }
+
+    async loginEmailSetupResend(req, res) {
+        try {
+            const { maskedEmail } = await userService.resendLoginEmailSetup((req.body || {}).challengeId, req);
+            return res.status(200).send({ msg: `We sent a new verification code to ${maskedEmail}.`, email: maskedEmail });
+        } catch (error) {
+            return this.emailSetupError(res, error, 'loginEmailSetupResend');
+        }
+    }
+
+    async loginEmailSetupConfirm(req, res) {
+        try {
+            const { challengeId, otp } = req.body || {};
+            const result = await userService.completeLoginEmailSetup(challengeId, otp, req);
+
+            // Authenticator is still needed: carry on with that step.
+            if (result.otpRequired) {
+                return res.status(202).json({
+                    otpRequired: true,
+                    challengeId: result.challengeId,
+                    email: result.maskedEmail,
+                    method: result.method,
+                    msg: result.method === 'totp' ? 'Enter the code from your Authenticator app.' : 'Set up Google Authenticator to continue.'
+                });
+            }
+
+            const { msg, accessToken, refreshToken, deviceId, userId, method } = result;
+            authLog.record(req, { userId, eventType: 'login', method: method === 'google' ? 'google' : 'otp' });
+            res.cookie('refreshToken', refreshToken, {
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 30 * 24 * 60 * 60 * 1000
+            });
+            return res.status(200).send({ msg, accessToken, newAccessToken: accessToken, deviceId });
+        } catch (error) {
+            if ((error.statusCode || 500) !== 500 && error.userId) {
+                authLog.recordFailure(req, { method: 'otp', reason: error.message, userId: error.userId });
+            }
+            return this.emailSetupError(res, error, 'loginEmailSetupConfirm');
+        }
+    }
+
+    // Logged in (bank account or withdrawal screens): same steps, the session proves who is asking.
+    async emailSetupSend(req, res) {
+        try {
+            const verifyId = require('crypto').randomBytes(32).toString('hex');
+            const { maskedEmail } = await EmailSetup.start(req.user_id, `user:${verifyId}`, (req.body || {}).email, req);
+            return res.status(200).send({ verifyId, msg: `We sent a verification code to ${maskedEmail}.`, email: maskedEmail });
+        } catch (error) {
+            return this.emailSetupError(res, error, 'emailSetupSend');
+        }
+    }
+
+    async emailSetupResend(req, res) {
+        try {
+            const verifyId = this.verifyIdFrom(req);
+            const { maskedEmail } = await EmailSetup.resend(req.user_id, `user:${verifyId}`, req);
+            return res.status(200).send({ msg: `We sent a new verification code to ${maskedEmail}.`, email: maskedEmail });
+        } catch (error) {
+            return this.emailSetupError(res, error, 'emailSetupResend');
+        }
+    }
+
+    async emailSetupConfirm(req, res) {
+        try {
+            const verifyId = this.verifyIdFrom(req);
+            const email = await EmailSetup.confirm(req.user_id, `user:${verifyId}`, (req.body || {}).otp, req);
+            return res.status(200).send({ status: true, email, msg: 'Your email has been verified and saved.' });
+        } catch (error) {
+            return this.emailSetupError(res, error, 'emailSetupConfirm');
+        }
+    }
+
+    verifyIdFrom(req) {
+        const verifyId = String((req.body || {}).verifyId || '');
+        if (!/^[a-f0-9]{64}$/.test(verifyId)) {
+            throw Object.assign(new Error('This verification has expired. Please start again.'), { statusCode: 400, restartEmailSetup: true });
+        }
+        return verifyId;
     }
 
     loginTotpError(res, error, label) {
