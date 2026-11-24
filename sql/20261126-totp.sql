@@ -1,7 +1,5 @@
--- Google Authenticator (TOTP) for the new-device login. Run ONCE, after
--- sql/20261123-new-device-login-otp.sql and sql/20261125-account-otp-challenge-columns.sql.
--- MySQL 5.7 has no "ADD COLUMN IF NOT EXISTS", so a second run of the ALTER says the column
--- already exists; that is harmless.
+-- Google Authenticator (TOTP) for the new-device login. Needs sql/20261123-new-device-login-otp.sql
+-- to have been run already. Safe to run more than once.
 --
 -- tbl_user_totp         one row per user who started setup. The secret is stored encrypted
 --                       (AES-256-GCM, key TOTP_ENC_KEY in the API .env). enabled = 1 only after
@@ -35,5 +33,8 @@ CREATE TABLE IF NOT EXISTS tbl_user_backup_code (
   KEY idx_backup_user (user_id, code_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-ALTER TABLE tbl_login_challenge
-  ADD COLUMN second_factor VARCHAR(10) NOT NULL DEFAULT 'email' AFTER purpose;
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbl_login_challenge' AND COLUMN_NAME = 'second_factor') = 0,
+  'ALTER TABLE tbl_login_challenge ADD COLUMN second_factor VARCHAR(10) NOT NULL DEFAULT ''email''', 'SELECT ''second_factor already there'' AS note');
+PREPARE stmt FROM @s;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
