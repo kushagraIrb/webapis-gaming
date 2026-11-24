@@ -19,7 +19,7 @@ let warnedUntrusted = false;
 
 // What the request showed about where it came from, for the log only. Headers can be written by anyone, so
 // only characters an IP address can contain are kept and each value is cut short.
-const seen = (value) => (value === undefined || value === null || value === '' ? 'none' : String(value).replace(/[^0-9a-fA-F:.,s]/g, '?').slice(0, 80));
+const seen = (value) => (value === undefined || value === null || value === '' ? 'none' : String(value).replace(/[^0-9a-fA-F:.,\s]/g, '?').slice(0, 80));
 const describeRequest = (req) =>
     `connection=${seen(req.socket && req.socket.remoteAddress)}, x-real-ip=${seen(req.headers['x-real-ip'])}, ` +
     `cf-connecting-ip=${seen(req.headers['cf-connecting-ip'])}, x-forwarded-for=${seen(req.headers['x-forwarded-for'])}`;

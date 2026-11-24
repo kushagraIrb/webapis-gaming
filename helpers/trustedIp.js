@@ -12,7 +12,8 @@ const net = require('net');
 //     -> the best guess is returned, but it is NOT trusted and must never be blocked on.
 //
 // The connection address is the socket's. When the API sits behind a reverse proxy on the same machine the
-// socket is the proxy, so the address the proxy saw is read from X-Real-IP (which the proxy sets itself).
+// socket is the proxy, so the address the proxy saw is read from X-Real-IP (which the proxy sets itself) or,
+// if that header is missing, from the last entry of X-Forwarded-For (which the proxy appends).
 //
 // Cloudflare's published ranges: https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6
 // (copied 24 Nov 2026; they change rarely, check them now and then).
@@ -45,12 +46,26 @@ const isCloudflare = (ip) => net.isIP(ip) !== 0 && cloudflare.check(ip, family(i
 const isPrivate = (ip) => net.isIP(ip) !== 0 && privateRanges.check(ip, family(ip));
 const isPublic = (ip) => net.isIP(ip) !== 0 && !isPrivate(ip);
 
-// The address the connection came from, or null when it cannot be told.
+// The LAST address in X-Forwarded-For, or ''. nginx (proxy_add_x_forwarded_for) appends the address it was
+// talking to at the end of the list; anything a visitor writes in the header comes BEFORE it, so this one
+// cannot be forged. It relies on the proxy on this machine appending, as nginx does.
+function lastForwarded(req) {
+    const raw = req.headers && req.headers['x-forwarded-for'];
+    if (!raw) return '';
+    const parts = String(raw).split(',').map((part) => normalize(part)).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
+}
+
+// The address the connection came from, or null when it cannot be told. Behind nginx on this machine the
+// socket is nginx itself, so the address nginx saw is read from X-Real-IP, or (on a setup where that header
+// does not arrive, as on the dev server) from the end of X-Forwarded-For.
 function connectionAddress(req) {
     const socketIp = normalize(req.socket && req.socket.remoteAddress);
     if (isPublic(socketIp)) return socketIp;
     const viaProxy = normalize(req.headers && req.headers['x-real-ip']);
-    return isPublic(viaProxy) ? viaProxy : null;
+    if (isPublic(viaProxy)) return viaProxy;
+    const appended = lastForwarded(req);
+    return isPublic(appended) ? appended : null;
 }
 
 // { ip, trusted }: ip may be null; trusted is true only when the address cannot have been faked.
