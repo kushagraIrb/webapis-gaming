@@ -17,6 +17,13 @@ const BLOCK_MINUTES = 60;
 
 let warnedUntrusted = false;
 
+// What the request showed about where it came from, for the log only. Headers can be written by anyone, so
+// only characters an IP address can contain are kept and each value is cut short.
+const seen = (value) => (value === undefined || value === null || value === '' ? 'none' : String(value).replace(/[^0-9a-fA-F:.,s]/g, '?').slice(0, 80));
+const describeRequest = (req) =>
+    `connection=${seen(req.socket && req.socket.remoteAddress)}, x-real-ip=${seen(req.headers['x-real-ip'])}, ` +
+    `cf-connecting-ip=${seen(req.headers['cf-connecting-ip'])}, x-forwarded-for=${seen(req.headers['x-forwarded-for'])}`;
+
 function describe(block) {
     const until = moment.tz(block.blocked_until || block.blockedUntil, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata');
     const secondsLeft = Math.max(1, Math.ceil((until.valueOf() - Date.now()) / 1000));
@@ -45,7 +52,7 @@ class LoginBlockService {
         if (trusted && ip) return ip;
         if (!warnedUntrusted) {
             warnedUntrusted = true;
-            logger.warn('Login block: the visitor IP could not be established for sure, so it is not used. Check the proxy sets X-Real-IP.');
+            logger.warn(`Login block: the visitor IP could not be established for sure, so it is not used. The proxy must pass the connection address in X-Real-IP. Seen: ${describeRequest(req)}`);
         }
         return null;
     }
@@ -71,26 +78,35 @@ class LoginBlockService {
         }
     }
 
-    // Call right AFTER a counted failed attempt was written to the activity log. Blocks the IP and the phones
-    // when this was the last attempt allowed, and returns the details; otherwise null.
+    // Call right AFTER a counted failed attempt was written to the activity log. Returns { block, attemptsLeft }:
+    // block is the details when this was the last attempt allowed (the IP and the phones are blocked now),
+    // otherwise attemptsLeft says how many tries remain. Both are null when the visitor IP cannot be trusted,
+    // because then nothing can be counted.
     static async afterFailedAttempt(req) {
+        const nothing = { block: null, attemptsLeft: null };
         try {
             const ip = this.trustedIp(req);
-            if (!ip) return null;
+            if (!ip) return nothing;
 
             const since = await loginBlockModel.countStart(ip, WINDOW_MINUTES);
             const { count, phones } = await loginBlockModel.recentFailures(ip, since);
-            if (count < MAX_ATTEMPTS) return null;
+            if (count < MAX_ATTEMPTS) return { block: null, attemptsLeft: MAX_ATTEMPTS - count };
 
             const accounts = await loginBlockModel.accountsForPhones(phones);
             const untilText = loginBlockModel.minutesFromNow(BLOCK_MINUTES);
             await loginBlockModel.createBlock({ ip, accounts, failedCount: Math.min(count, 255), untilText });
             require('../helpers/loginBlockGuard').forget(ip); // loaded here to avoid a circular require
-            return describe({ block_type: 'ip', blocked_until: untilText });
+            return { block: describe({ block_type: 'ip', blocked_until: untilText }), attemptsLeft: 0 };
         } catch (error) {
             this.failOpen(error);
-            return null;
+            return nothing;
         }
+    }
+
+    // "Incorrect phone number or password! You have 2 attempts left."
+    static attemptsMessage(base, attemptsLeft) {
+        const tries = attemptsLeft === 1 ? '1 attempt' : `${attemptsLeft} attempts`;
+        return `${base} You have ${tries} left.`;
     }
 
     static failOpen(error) {
