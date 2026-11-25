@@ -7,8 +7,8 @@
 --
 -- tbl_user_email_log every email set or changed: who did it ('user' after a verified code, 'admin'
 --                    without one), the old and new address, and for an admin which admin.
--- tbl_login_challenge.second_factor also takes 'emailsetup' (a login waiting for the user's email);
--- the column is VARCHAR(10) already (sql/20261126-totp.sql), so nothing to change there.
+-- tbl_login_challenge.second_factor 'emailsetup' marks a login waiting for the user's email. The column
+-- is added below if sql/20261126-totp.sql has not already added it (same definition, safe either way).
 -- Emails are at most 50 characters (tbl_registration.email is VARCHAR(50)).
 --
 -- Read who changed an email:
@@ -28,3 +28,7 @@ CREATE TABLE IF NOT EXISTS tbl_user_email_log (
   KEY idx_email_log_user (user_id),
   KEY idx_email_log_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbl_login_challenge' AND COLUMN_NAME = 'second_factor') = 0,
+  'ALTER TABLE tbl_login_challenge ADD COLUMN second_factor VARCHAR(10) NOT NULL DEFAULT ''email''', 'SELECT ''second_factor already there'' AS note');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
