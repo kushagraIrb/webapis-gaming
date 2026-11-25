@@ -1,4 +1,5 @@
 const { check, body } = require('express-validator');
+const passwordRules = require('./passwordRules');
 
 exports.otpValidation = [
     check('email','Emial is required').not().isEmpty(),
@@ -22,7 +23,15 @@ exports.loginValidation = [
 ]
 
 exports.changePwdValidation = [
-    check('password', 'Password is required and must be at least 8 characters').isLength({ min: 8 }),
+    // The user must type their old password first; the service checks it against the saved one.
+    check('current_password', 'Old password is required').isString().bail().not().isEmpty(),
+    // New password: at least 8 characters, one uppercase letter, one number and one special character.
+    body('password').custom((value) => {
+        if (!passwordRules.isValid(value)) {
+            throw new Error(passwordRules.MESSAGE);
+        }
+        return true;
+    }),
     check('conf_password', 'Confirm Password is required').not().isEmpty(),
     body('conf_password').custom((value, { req }) => {
         if (value !== req.body.password) {
