@@ -263,7 +263,8 @@ test('password reset clears every trusted device; a self password change keeps o
   const keep = await DeviceTrust.trustNewDevice(user.id, makeReq());
   const other = await DeviceTrust.trustNewDevice(user.id, makeReq());
 
-  await userService.changeUserPassword('New@Pass123', user.id, makeReq(keep));
+  // The old password has to be given too (Change Password asks for it).
+  await userService.changeUserPassword('New@Pass123', user.id, makeReq(keep), PASSWORD);
   const [rows] = await db.query('SELECT COUNT(*) AS n FROM tbl_user_trusted_device WHERE user_id = ?', [user.id]);
   assert.strictEqual(rows[0].n, 1, 'only the browser the password was changed on stays trusted');
 
