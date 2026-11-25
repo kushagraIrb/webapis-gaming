@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const userModel = require('../models/userModel');
 const emailVerifyModel = require('../models/emailVerifyModel');
 const DeviceTrust = require('./deviceTrustService');
-const sendMail = require('../helpers/sendMail');
+const { deliverOtp } = require('../helpers/otpDelivery');
 const { clientIp } = require('../helpers/clientInfo');
 const { logger } = require('../logger');
 
@@ -126,7 +126,7 @@ class EmailSetupService {
                 <p style="color: #666; font-size: 13px;">IP address: ${escapeHtml(ip || 'Unknown')}</p>
                 <p style="color: #666; font-size: 13px;">If you did not ask for this, ignore this email.</p>
             </div>`;
-        Promise.resolve(sendMail(email, 'Gaming Helper Online - Verify your email', content))
+        Promise.resolve(deliverOtp({ kind: 'email setup code', to: email, subject: 'Gaming Helper Online - Verify your email', html: content, code: otp }))
             .catch((error) => logger.error(`Email verification mail could not be sent: ${error.message}`));
     }
 }

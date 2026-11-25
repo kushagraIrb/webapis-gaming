@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const sendMail = require('../helpers/sendMail');
+const { deliverOtp } = require('../helpers/otpDelivery');
 
 class OtpService {
     /**
@@ -15,10 +15,11 @@ class OtpService {
      * @param {string} email - Recipient's email address
      * @param {string} subject - Email subject
      * @param {string} content - Email content (HTML)
+     * @param {number|string} code - The code inside the email (returned to the screen when EMAIL_OTP_ENABLED=false)
      * @returns {Promise<void>}
      */
-    static async sendOtpEmail(email, subject, content) {
-        await sendMail(email, subject, content);
+    static async sendOtpEmail(email, subject, content, code) {
+        await deliverOtp({ kind: 'registration code', to: email, subject, html: content, code });
     }
 }
 

@@ -4,7 +4,7 @@ const accountHistoryModel = require('../models/accountHistoryModel');
 const accountOtpCodeModel = require('../models/accountOtpCodeModel');
 const authLog = require('../models/authLogModel');
 const DeviceTrust = require('./deviceTrustService');
-const sendMail = require('../helpers/sendMail');
+const { deliverOtp } = require('../helpers/otpDelivery');
 const browserName = require('../helpers/browserName');
 const { clientIp, clientBrowser } = require('../helpers/clientInfo');
 const { logger } = require('../logger');
@@ -261,7 +261,7 @@ class AccountOtpService {
                 <p style="color: #666; font-size: 13px;">IP address: ${escapeHtml(info.ip)}<br>Browser: ${escapeHtml(info.browser)}</p>
                 <p style="color: #666; font-size: 13px;">If this was not you, do not enter the code. Change your password and contact support.</p>
             </div>`;
-        Promise.resolve(sendMail(email, 'Gaming Helper Online - Confirm your bank account change', content))
+        Promise.resolve(deliverOtp({ kind: 'bank account code', to: email, subject: 'Gaming Helper Online - Confirm your bank account change', html: content, code: otp }))
             .catch((error) => logger.error(`Account OTP email could not be sent: ${error.message}`));
     }
 
@@ -281,7 +281,7 @@ class AccountOtpService {
                     <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(info.ip)}<br>Browser: ${escapeHtml(info.browser)}</p>
                     <p>If this was you, no action is needed. If not, change your password immediately and contact support.</p>
                 </div>`;
-            await sendMail(email, 'Your bank account was changed', content);
+            await deliverOtp({ kind: 'bank account alert', to: email, subject: 'Your bank account was changed', html: content });
         })().catch((error) => logger.error(`Bank account alert email could not be sent: ${error.message}`));
     }
 }
