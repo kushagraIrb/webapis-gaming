@@ -5,8 +5,10 @@ const accountHistoryController = require('../controllers/AccountsHistoryControll
 const authenticateToken = require('../helpers/authToken');
 const requireEmail = require('../helpers/requireEmail');
 const limits = require('../helpers/rateLimiters');
+const { devOtpEcho } = require('../helpers/otpDelivery');
 
 router.use(express.json());
+router.use(devOtpEcho);
 
 // Apply authenticateToken to all routes below this line
 router.use(authenticateToken);

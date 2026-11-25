@@ -8,8 +8,10 @@ const authenticateToken = require('../helpers/authToken');
 const userController = require('../controllers/UserController');
 const requireEmail = require('../helpers/requireEmail');
 const limits = require('../helpers/rateLimiters');
+const { devOtpEcho } = require('../helpers/otpDelivery');
 
 router.use(express.json());
+router.use(devOtpEcho);
 
 router.post('/send-otp', limits.otpPerIp, limits.otpPerTarget, otpValidation, userController.sendOtp);
 
