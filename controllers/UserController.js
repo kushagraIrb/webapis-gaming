@@ -579,10 +579,10 @@ class UserController {
                 return res.status(400).json({ errors: errors.array() });
             }
 
-            const { password } = req.body;
+            const { password, current_password } = req.body;
             const user_id  = req.user_id;
 
-            const response = await userService.changeUserPassword(password, user_id, req);
+            const response = await userService.changeUserPassword(password, user_id, req, current_password);
 
             return res.status(200).send({ msg: 'Password updated successfully', response });
         } catch (error) {
@@ -593,7 +593,8 @@ class UserController {
             }
     
             return res.status(statusCode).send({
-                msg: error.message || 'Something went wrong'
+                msg: error.message || 'Something went wrong',
+                ...(error.blockedUntil && { blockedUntil: error.blockedUntil })
             });
         }
     }
