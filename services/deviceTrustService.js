@@ -4,6 +4,7 @@ const trustedDeviceModel = require('../models/trustedDeviceModel');
 const userModel = require('../models/userModel');
 const totpModel = require('../models/totpModel');
 const sendMail = require('../helpers/sendMail');
+const { deliverOtp } = require('../helpers/otpDelivery');
 const browserName = require('../helpers/browserName');
 const { logger } = require('../logger');
 
@@ -356,7 +357,7 @@ class DeviceTrustService {
                 <p style="color: #666; font-size: 13px;">IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
                 <p style="color: #666; font-size: 13px;">If this was not you, do not enter the code and change your password.</p>
             </div>`;
-        Promise.resolve(sendMail(email, 'Gaming Helper Online - Login verification code', content))
+        Promise.resolve(deliverOtp({ kind: 'login code', to: email, subject: 'Gaming Helper Online - Login verification code', html: content, code: otp }))
             .catch((error) => logger.error(`Login OTP email could not be sent: ${error.message}`));
     }
 
@@ -372,7 +373,7 @@ class DeviceTrustService {
                 <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(ctx.ip || 'Unknown')}<br>Browser: ${escapeHtml(browserName(ctx.browser))}</p>
                 <p>If this was you, no action is needed. If not, change your password immediately and contact support.</p>
             </div>`;
-        Promise.resolve(sendMail(email, 'New device login on your Gaming Helper account', content))
+        Promise.resolve(deliverOtp({ kind: 'new device alert', to: email, subject: 'New device login on your Gaming Helper account', html: content }))
             .catch((error) => logger.error(`New device alert email could not be sent: ${error.message}`));
     }
 
