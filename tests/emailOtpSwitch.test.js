@@ -52,7 +52,7 @@ test.after(async () => {
   for (const id of created) {
     await db.query('DELETE FROM tbl_user_account WHERE user_id = ?', [id]);
     await db.query('DELETE FROM tbl_auth_activity_log WHERE user_id = ?', [id]);
-    await db.query('DELETE FROM tbl_user_email_log WHERE user_id = ?', [id]).catch(() => {});
+    await db.query('DELETE FROM tbl_user_email_pwd_log WHERE user_id = ?', [id]).catch(() => {});
     await db.query('DELETE FROM otp_verified WHERE user_id = ?', [id]);
     await db.query('DELETE FROM tbl_user_trusted_device WHERE user_id = ?', [id]);
     await db.query('DELETE FROM tbl_login_challenge WHERE user_id = ?', [id]);
