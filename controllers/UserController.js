@@ -9,6 +9,7 @@ const DeviceTrust = require('../services/deviceTrustService');
 const AccountOtp = require('../services/accountOtpService');
 const TotpService = require('../services/totpService');
 const LoginBlock = require('../services/loginBlockService');
+const passwordRules = require('../helpers/passwordRules');
 const bcrypt = require('bcrypt');
 const EmailSetup = require('../services/emailSetupService');
 
@@ -772,6 +773,12 @@ class UserController {
 
             if (newPass !== conPass) {
               return res.status(400).json({ msg: 'Passwords do not match.' });
+            }
+
+            // The new password follows the same four rules as registration and Change Password. A weak one is
+            // refused before the link is used, so the same link still works for the next try.
+            if (!passwordRules.isValid(newPass)) {
+                return res.status(400).json({ msg: passwordRules.MESSAGE });
             }
 
             const updateResult = await userService.forgotUserPassword(newPass, token);
