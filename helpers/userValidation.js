@@ -13,7 +13,14 @@ exports.signUpValidation = [
     check('email','Email is required').not().isEmpty(),
     check('email','Please enter a valid email').isEmail().normalizeEmail({ gmail_remove_dots:false }),
     check('pincode','Pincode is required').not().isEmpty(),
-    check('password','Password must be atleast 6 characters').isLength({ min:6 }),
+    // A new account's password: at least 8 characters, one uppercase letter, one number and one special character
+    // (the same rules as Change Password). Login does not use this: existing accounts keep their passwords.
+    body('password').custom((value) => {
+        if (!passwordRules.isValid(value)) {
+            throw new Error(passwordRules.MESSAGE);
+        }
+        return true;
+    }),
     check('is_eighteen','18 checkbox is required').not().isEmpty(),
 ]
 
