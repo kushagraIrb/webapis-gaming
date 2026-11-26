@@ -16,9 +16,17 @@ const express = require('express');
 require('dotenv').config();
 process.env.RATE_LIMIT_DISABLED = 'true';
 
-// Nothing in these flows should send mail; if it does, it must not reach a real server.
+// Mail never reaches a real server: it is collected here. A wrong old password sends an alert email.
+const sent = [];
+let failMail = false;
 const sendMailPath = require.resolve('../helpers/sendMail');
-require.cache[sendMailPath] = { id: sendMailPath, filename: sendMailPath, loaded: true, exports: async () => {} };
+require.cache[sendMailPath] = {
+  id: sendMailPath, filename: sendMailPath, loaded: true,
+  exports: async (to, subject, html) => {
+    if (failMail) throw new Error('smtp down');
+    sent.push({ to, subject, html });
+  },
+};
 
 const pool = require('../config/database');
 const db = pool.promise();
@@ -321,4 +329,124 @@ test('a user whose password an admin set can change it with that password, and n
   assert.strictEqual(ok.status, 200);
   const [[row]] = await db.query('SELECT must_change_password FROM tbl_registration WHERE id = ?', [user.id]);
   assert.strictEqual(row.must_change_password, 0);
+});
+
+// ---------------------------------------------------------------- the alert email
+
+const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36';
+const emailOf = async (id) => (await db.query('SELECT email FROM tbl_registration WHERE id = ?', [id]))[0][0].email;
+const alertsFor = (to) => sent.filter((m) => m.to === to && /Failed attempt to change your password/.test(m.subject));
+const nextTick = (ms = 400) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('a wrong old password emails the owner: when, IP address, browser name and what to do, never a password', async () => {
+  sent.length = 0;
+  const user = await makeUser();
+  const to = await emailOf(user.id);
+  const res = await attempt(user, 'Wrong@111', NEW, NEW, { 'CF-Connecting-IP': '198.51.100.88', 'User-Agent': CHROME });
+  assert.strictEqual(res.status, 400);
+
+  const mails = await waitFor(async () => { const m = alertsFor(to); return m.length ? m : null; });
+  assert.strictEqual(mails.length, 1);
+  const html = mails[0].html;
+  assert.match(html, /Someone tried to change the password of your Gaming Helper Online account/);
+  assert.match(html, /has <strong>not<\/strong> been changed/);
+  assert.ok(html.includes('IP address: 198.51.100.88'), 'the IP address');
+  assert.ok(html.includes('Browser: Chrome on Windows'), 'a short browser name, not the raw text');
+  assert.ok(!html.includes('Mozilla') && !html.includes('AppleWebKit'));
+  assert.match(html, /Time: .*\(IST\)/);
+  assert.match(html, /contact our support team/);
+  assert.match(html, /If this was you, there is nothing more to do/);
+  assert.ok(!html.includes('blocked until'), 'no block yet');
+  assert.ok(!html.includes('Wrong@111') && !html.includes(OLD) && !html.includes(NEW), 'no password in the mail');
+});
+
+test('three wrong tries send three emails; the 3rd says the change is blocked and until when; later tries send none', async () => {
+  sent.length = 0;
+  const user = await makeUser();
+  const to = await emailOf(user.id);
+  for (const wrong of ['Wrong@111', 'Wrong@222', 'Wrong@333']) {
+    await attempt(user, wrong);
+    await nextTick();
+  }
+  const mails = await waitFor(async () => { const m = alertsFor(to); return m.length >= 3 ? m : null; });
+  assert.strictEqual(mails.length, 3);
+  assert.ok(!mails[0].html.includes('blocked until') && !mails[1].html.includes('blocked until'));
+  assert.match(mails[2].html, /changing your password is now blocked until <strong>\d{2} \w{3} \d{4}, \d{2}:\d{2} (AM|PM) \(IST\)<\/strong>/);
+
+  // blocked: neither a wrong nor the right old password sends anything
+  await attempt(user, 'Wrong@444');
+  await attempt(user, OLD);
+  await nextTick(600);
+  assert.strictEqual(alertsFor(to).length, 3);
+});
+
+test('a successful change sends no alert', async () => {
+  sent.length = 0;
+  const user = await makeUser();
+  const to = await emailOf(user.id);
+  assert.strictEqual((await attempt(user, OLD)).status, 200);
+  await nextTick(600);
+  assert.strictEqual(alertsFor(to).length, 0);
+});
+
+test('simultaneous wrong guesses send at most 3 emails', async () => {
+  sent.length = 0;
+  const user = await makeUser();
+  const to = await emailOf(user.id);
+  await Promise.all(Array.from({ length: 20 }, (_, i) => attempt(user, `Wrong@${2000 + i}`)));
+  await nextTick(1000);
+  assert.strictEqual(alertsFor(to).length, 3);
+});
+
+test('an account with no email: the change is refused as usual and nothing is sent', async () => {
+  sent.length = 0;
+  const user = await makeUser();
+  await db.query("UPDATE tbl_registration SET email = '' WHERE id = ?", [user.id]);
+  const res = await attempt(user, 'Wrong@111');
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual(res.json.msg, 'Old password is incorrect. 2 attempts left.');
+  await nextTick(600);
+  assert.strictEqual(sent.length, 0);
+});
+
+test('with EMAIL_OTP_ENABLED=false no alert is emailed, and the answer is unchanged', async () => {
+  sent.length = 0;
+  process.env.EMAIL_OTP_ENABLED = 'false';
+  try {
+    const user = await makeUser();
+    const res = await attempt(user, 'Wrong@111');
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual(res.json.msg, 'Old password is incorrect. 2 attempts left.');
+    assert.strictEqual(res.json.devOtp, undefined, 'no code is put in this answer');
+    await nextTick(600);
+    assert.strictEqual(sent.length, 0);
+  } finally {
+    delete process.env.EMAIL_OTP_ENABLED;
+  }
+});
+
+test('a mail server that is down does not change the answer to the user', async () => {
+  sent.length = 0;
+  failMail = true;
+  try {
+    const user = await makeUser();
+    const res = await attempt(user, 'Wrong@111');
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual(res.json.msg, 'Old password is incorrect. 2 attempts left.');
+    const third = await attempt(user, 'Wrong@222');
+    assert.strictEqual(third.json.msg, 'Old password is incorrect. 1 attempt left.');
+    await nextTick(400);
+  } finally {
+    failMail = false;
+  }
+});
+
+test('the email text escapes HTML in the name', async () => {
+  sent.length = 0;
+  const user = await makeUser();
+  await db.query("UPDATE tbl_registration SET first_name = '<script>alert(1)</script>' WHERE id = ?", [user.id]);
+  const to = await emailOf(user.id);
+  await attempt(user, 'Wrong@111', NEW, NEW, { 'User-Agent': '"><img src=x onerror=alert(2)>' });
+  const mails = await waitFor(async () => { const m = alertsFor(to); return m.length ? m : null; });
+  assert.ok(!mails[0].html.includes('<script>') && !mails[0].html.includes('<img src=x'));
 });
