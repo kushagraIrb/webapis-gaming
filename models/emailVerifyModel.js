@@ -5,7 +5,7 @@ const db = require('../config/database');
 // being verified is kept in its `email` column, the attempt's key (a hash) in payload_hash, and the code
 // is stored as it was sent. These rows have no phone, so the signup lookup (email AND phone) can never
 // match them, and the bank account code checks require a different purpose. Columns come from
-// sql/20261126-otp-verified-account-columns.sql; tbl_user_email_log from sql/20261127-email-required.sql.
+// sql/20261126-otp-verified-account-columns.sql; tbl_user_email_pwd_log from sql/20261127-email-required.sql and sql/20261201-user-email-pwd-log.sql (run the second one first).
 //
 // Time comparisons use the database clock (NOW()).
 const PURPOSE = 'email_setup';
@@ -91,7 +91,7 @@ class EmailVerifyModel {
 
     static async logChange({ userId, oldEmail, newEmail, changedBy, ip }) {
         await db.promise().query(
-            'INSERT INTO tbl_user_email_log (user_id, old_email, new_email, changed_by, ip_address) VALUES (?, ?, ?, ?, ?)',
+            "INSERT INTO tbl_user_email_pwd_log (user_id, change_type, old_email, new_email, changed_by, ip_address) VALUES (?, 'email', ?, ?, ?, ?)",
             [userId, oldEmail || null, newEmail, changedBy, ip || null]
         );
     }

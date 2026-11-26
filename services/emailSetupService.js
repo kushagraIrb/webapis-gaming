@@ -10,7 +10,7 @@ const { logger } = require('../logger');
 // can log in, change their bank accounts or withdraw. The code goes to the NEW address, is 6 digits,
 // valid 10 minutes, 5 guesses (counted atomically), 3 resends 60 seconds apart, single use, and the
 // email is only saved after the right code. The code is kept in the existing otp_verified table
-// (purpose 'email_setup'), as the bank account codes are. Every change is written to tbl_user_email_log.
+// (purpose 'email_setup'), as the bank account codes are. Every change is written to tbl_user_email_pwd_log.
 //
 // Switched on with EMAIL_REQUIRED_ENABLED=true (needs sql/20261127-email-required.sql). Off = nothing here
 // changes how anything works.
