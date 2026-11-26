@@ -18,14 +18,20 @@ const mustChange = require('../helpers/mustChangePassword');
 const passwordAttempts = require('../models/passwordChangeAttemptModel');
 const authLog = require('../models/authLogModel');
 const moment = require('moment-timezone');
+const { deliverOtp } = require('../helpers/otpDelivery');
+const browserName = require('../helpers/browserName');
+const { clientIp, clientBrowser } = require('../helpers/clientInfo');
 
 // Change password: 3 wrong old passwords block changing the password for 24 hours.
 const OLD_PASSWORD_MAX_WRONG = 3;
 const OLD_PASSWORD_BLOCK_MINUTES = 24 * 60;
 const OLD_PASSWORD_WINDOW_MINUTES = 24 * 60;
 
+const blockTimeText = (blockedUntil) =>
+    moment.tz(blockedUntil, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata').format('DD MMM YYYY, hh:mm A');
+
 const passwordBlockedError = (blockedUntil) => {
-    const when = moment.tz(blockedUntil, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata').format('DD MMM YYYY, hh:mm A');
+    const when = blockTimeText(blockedUntil);
     const err = new Error(`Too many wrong attempts. You can change your password again after ${when} (IST).`);
     err.statusCode = 429;
     err.blockedUntil = blockedUntil;
@@ -647,6 +653,34 @@ class UserService {
         }
     }
 
+    // An email to the owner of the account when a wrong old password was typed in Change Password: when, from which
+    // IP address and browser, and what to do. It is sent for each counted wrong try (3 at most, then the block starts
+    // and later tries send nothing). It follows the EMAIL_OTP_ENABLED switch like the other alert emails, never
+    // fails the request, and never contains a password.
+    static sendPasswordChangeAlert(req, userId, outcome) {
+        (async () => {
+            const [users] = await db.promise().query('SELECT email, first_name FROM tbl_registration WHERE id = ?', [userId]);
+            const email = String((users[0] && users[0].email) || '').trim();
+            if (!email) return;
+
+            const { escapeHtml } = DeviceTrust.shared;
+            const when = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+            const blockedLine = outcome && outcome.blockedUntil
+                ? `<p>For your security, changing your password is now blocked until <strong>${escapeHtml(blockTimeText(outcome.blockedUntil))} (IST)</strong>.</p>`
+                : '';
+            const content = `
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+                    <h2>Gaming Helper Online</h2>
+                    <p>Hello ${escapeHtml(users[0].first_name || 'there')},</p>
+                    <p>Someone tried to change the password of your Gaming Helper Online account, but the old password that was entered was incorrect. Your password has <strong>not</strong> been changed.</p>
+                    <p style="color: #444;">Time: ${escapeHtml(when)} (IST)<br>IP address: ${escapeHtml(clientIp(req) || 'Unknown')}<br>Browser: ${escapeHtml(browserName(clientBrowser(req)))}</p>
+                    ${blockedLine}
+                    <p>If this was you, there is nothing more to do. If it was not you, someone may be trying to get into your account. Please contact our support team right away, and do not share your password or any verification code with anyone.</p>
+                </div>`;
+            await deliverOtp({ kind: 'password change alert', to: email, subject: 'Gaming Helper Online - Failed attempt to change your password', html: content });
+        })().catch((error) => logger.error(`Password change alert email could not be sent: ${error.message}`));
+    }
+
     static async changeUserPassword(password, userId, req, currentPassword) {
         const [rows] = await db.promise().query('SELECT password FROM tbl_registration WHERE id = ?', [userId]);
         const stored = rows[0] && rows[0].password ? rows[0].password : null;
@@ -677,6 +711,11 @@ class UserService {
                     method: 'session', reason: 'wrong_old_password', userId, eventType: 'profile_update',
                     details: `password change: wrong old password${count}${outcome && outcome.blockedUntil ? ', blocked for 24 hours' : ''}`,
                 });
+            }
+            // One email for each guess that was counted (3 at most), so nobody can flood an inbox with them. Without
+            // the table nothing is counted, so nothing is sent.
+            if (req && outcome && outcome.counted) {
+                this.sendPasswordChangeAlert(req, userId, outcome);
             }
             if (outcome && outcome.blockedUntil) {
                 throw passwordBlockedError(outcome.blockedUntil);

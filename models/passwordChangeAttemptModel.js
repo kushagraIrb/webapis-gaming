@@ -39,8 +39,9 @@ class PasswordChangeAttemptModel {
     }
 
     // Counts one wrong old password. The count is taken in a single statement, so a burst of parallel guesses
-    // cannot slip past the limit. Returns { count, blockedUntil } (blockedUntil is set once the limit is
-    // reached), or null when the table does not exist.
+    // cannot slip past the limit. Returns { count, blockedUntil, counted } (blockedUntil is set once the limit is
+    // reached; counted is false for a guess that arrived just after another one started the block and was not
+    // counted), or null when the table does not exist.
     static async registerFailure(userId, fingerprint, maxAttempts, blockMinutes, windowMinutes) {
         try {
             const now = ist(0);
@@ -71,10 +72,10 @@ class PasswordChangeAttemptModel {
 
             if (result.affectedRows !== 1) {
                 // Another request blocked this user a moment ago.
-                return { count: maxAttempts, blockedUntil: await this.activeBlock(userId, fingerprint) };
+                return { count: maxAttempts, blockedUntil: await this.activeBlock(userId, fingerprint), counted: false };
             }
             const count = result.insertId;
-            return { count, blockedUntil: count >= maxAttempts ? blockUntil : null };
+            return { count, blockedUntil: count >= maxAttempts ? blockUntil : null, counted: true };
         } catch (error) {
             if (missingTable(error)) return null;
             throw error;
