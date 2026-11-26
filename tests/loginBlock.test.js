@@ -1,4 +1,4 @@
-// Login block: 3 wrong-password / unknown-phone logins from one IP within 5 minutes block that IP and the
+// Login block: 5 wrong-password / unknown-phone logins from one IP within 5 minutes block that IP and the
 // phones tried from it for 1 hour.
 //
 // Run with:  node --test tests/loginBlock.test.js
@@ -28,6 +28,7 @@ const pool = require('../config/database');
 const db = pool.promise();
 const { blockedIpGuard } = require('../helpers/loginBlockGuard');
 const { trustedClientIp } = require('../helpers/trustedIp');
+const { MAX_ATTEMPTS } = require('../services/loginBlockService');
 
 const PASSWORD = 'Test@12345';
 const WRONG = 'Wrong@12345';
@@ -105,24 +106,24 @@ const login = async (ip, phone, password = WRONG, extra = {}) => {
 
 const blockRows = async (value) => (await db.query('SELECT * FROM tbl_login_block WHERE block_value = ?', [value]))[0];
 
-test('three wrong passwords block the IP and the phone; the third answer is the block', async () => {
+test('the allowed number of wrong passwords blocks the IP and the phone; the last answer is the block', async () => {
   const user = await makeUser();
   const ip = nextIp();
 
-  const first = await login(ip, user.phone);
-  assert.strictEqual(first.status, 401);
-  assert.strictEqual(first.body.attemptsLeft, 2);
-  assert.match(first.body.msg, /Incorrect phone number or password! You have 2 attempts left./);
-  const second = await login(ip, user.phone);
-  assert.strictEqual(second.status, 401);
-  assert.strictEqual(second.body.attemptsLeft, 1);
-  assert.match(second.body.msg, /You have 1 attempt left./, 'singular for the last one');
+  assert.strictEqual(MAX_ATTEMPTS, 5, 'five tries');
+  for (let n = 1; n < MAX_ATTEMPTS; n++) {
+    const left = MAX_ATTEMPTS - n;
+    const res = await login(ip, user.phone);
+    assert.strictEqual(res.status, 401, 'try ' + n);
+    assert.strictEqual(res.body.attemptsLeft, left, 'try ' + n);
+    assert.match(res.body.msg, new RegExp('Incorrect phone number or password! You have ' + left + ' attempt' + (left === 1 ? '' : 's') + ' left.'));
+  }
 
-  const third = await login(ip, user.phone);
-  assert.strictEqual(third.status, 429);
-  assert.strictEqual(third.body.blocked, true);
-  assert.match(third.body.msg, /blocked for 1 hour/);
-  assert.ok(third.body.retryAfterSeconds > 3500 && third.body.retryAfterSeconds <= 3600);
+  const last = await login(ip, user.phone);
+  assert.strictEqual(last.status, 429);
+  assert.strictEqual(last.body.blocked, true);
+  assert.match(last.body.msg, /blocked for 1 hour/);
+  assert.ok(last.body.retryAfterSeconds > 3500 && last.body.retryAfterSeconds <= 3600);
 
   const [ipRow] = await blockRows(ip);
   const [phoneRow] = await blockRows(user.phone);
@@ -130,14 +131,14 @@ test('three wrong passwords block the IP and the phone; the third answer is the 
   assert.strictEqual(phoneRow.block_type, 'phone');
   assert.strictEqual(phoneRow.user_id, user.id);
   assert.strictEqual(ipRow.event_key, phoneRow.event_key, 'one event, so the admin panel can unblock both together');
-  assert.strictEqual(ipRow.failed_count, 3);
+  assert.strictEqual(ipRow.failed_count, MAX_ATTEMPTS);
 });
 
 test('once blocked, even the right password is refused, from that IP and for that phone from any IP', async () => {
   const user = await makeUser();
   const other = await makeUser();
   const ip = nextIp();
-  for (let i = 0; i < 3; i++) await login(ip, user.phone);
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await login(ip, user.phone);
 
   assert.strictEqual((await login(ip, user.phone, PASSWORD)).status, 429, 'right password, blocked phone and IP');
   assert.strictEqual((await login(ip, other.phone, PASSWORD)).status, 429, 'another phone, blocked IP');
@@ -148,7 +149,7 @@ test('once blocked, even the right password is refused, from that IP and for tha
 test('a blocked IP is refused on every route, not only on login', async () => {
   const user = await makeUser();
   const ip = nextIp();
-  for (let i = 0; i < 3; i++) await login(ip, user.phone);
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await login(ip, user.phone);
 
   const res = await fetch(`${base}/fetch-state?pincode=000000`, { headers: { 'X-Real-IP': ip } });
   assert.strictEqual(res.status, 429);
@@ -166,8 +167,8 @@ test('every existing phone tried from the IP is blocked; a phone with no account
   const a = await makeUser();
   const b = await makeUser();
   const ip = nextIp();
-  await login(ip, a.phone);
-  await login(ip, '5000000000'); // no account
+  const phones = [a.phone, '5000000000' /* no account */, b.phone];
+  for (let i = 0; i < MAX_ATTEMPTS - 1; i++) await login(ip, phones[i % phones.length]);
   const last = await login(ip, b.phone);
   assert.strictEqual(last.status, 429);
 
@@ -177,27 +178,24 @@ test('every existing phone tried from the IP is blocked; a phone with no account
   assert.strictEqual((await blockRows(ip)).length, 1);
 });
 
-test('unknown phones count too: three of them block the IP', async () => {
+test('unknown phones count too: the allowed number of them blocks the IP', async () => {
   const ip = nextIp();
-  assert.strictEqual((await login(ip, '5000000001')).status, 401);
-  assert.strictEqual((await login(ip, '5000000002')).status, 401);
-  assert.strictEqual((await login(ip, '5000000003')).status, 429);
+  for (let i = 1; i < MAX_ATTEMPTS; i++) assert.strictEqual((await login(ip, '500000000' + i)).status, 401, 'try ' + i);
+  assert.strictEqual((await login(ip, '5000000009')).status, 429);
   assert.strictEqual((await blockRows(ip)).length, 1);
 });
 
 test('a correct login resets the count', async () => {
   const user = await makeUser();
   const ip = nextIp();
-  await login(ip, user.phone);
-  await login(ip, user.phone);
+  for (let i = 0; i < MAX_ATTEMPTS - 1; i++) await login(ip, user.phone);
   await sleep(1100);
   assert.strictEqual((await login(ip, user.phone, PASSWORD)).status, 200);
   await sleep(1100); // the success row is written in the background
 
-  assert.strictEqual((await login(ip, user.phone)).status, 401);
-  assert.strictEqual((await login(ip, user.phone)).status, 401, 'two more wrong tries after the good login are still allowed');
+  for (let i = 1; i < MAX_ATTEMPTS; i++) assert.strictEqual((await login(ip, user.phone)).status, 401, 'wrong try ' + i + ' after the good login is still allowed');
   assert.strictEqual((await blockRows(ip)).length, 0);
-  assert.strictEqual((await login(ip, user.phone)).status, 429, 'the third wrong try after the good login blocks: the count really started over, it was not just switched off');
+  assert.strictEqual((await login(ip, user.phone)).status, 429, 'the last allowed wrong try after the good login blocks: the count really started over, it was not just switched off');
 });
 
 test('a refused blocked account and a blocked attempt do not count as wrong passwords', async () => {
@@ -213,7 +211,7 @@ test('a refused blocked account and a blocked attempt do not count as wrong pass
 test('a block ends by itself after its hour', async () => {
   const user = await makeUser();
   const ip = nextIp();
-  for (let i = 0; i < 3; i++) await login(ip, user.phone);
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await login(ip, user.phone);
   assert.strictEqual((await login(ip, user.phone, PASSWORD)).status, 429);
 
   await db.query('UPDATE tbl_login_block SET blocked_until = ? WHERE block_value IN (?, ?)',
@@ -226,7 +224,7 @@ test('a block ends by itself after its hour', async () => {
 test('an admin unblock restores access and the old attempts no longer count', async () => {
   const user = await makeUser();
   const ip = nextIp();
-  for (let i = 0; i < 3; i++) await login(ip, user.phone);
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await login(ip, user.phone);
   assert.strictEqual((await login(ip, user.phone, PASSWORD)).status, 429);
 
   await sleep(1100);
@@ -234,9 +232,8 @@ test('an admin unblock restores access and the old attempts no longer count', as
     [istNow(), 'Test Admin', ip, user.phone]);
   await sleep(3200);
 
-  assert.strictEqual((await login(ip, user.phone)).status, 401, 'one wrong try after the unblock is a normal wrong try, not a new block');
-  assert.strictEqual((await login(ip, user.phone)).status, 401);
-  assert.strictEqual((await login(ip, user.phone)).status, 429, 'three wrong tries after the unblock block again');
+  for (let i = 1; i < MAX_ATTEMPTS; i++) assert.strictEqual((await login(ip, user.phone)).status, 401, 'wrong try ' + i + ' after the unblock is a normal wrong try, not a new block');
+  assert.strictEqual((await login(ip, user.phone)).status, 429, 'the allowed number of wrong tries after the unblock block again');
 });
 
 test('a direct visitor cannot move the block onto someone else by faking CF-Connecting-IP', async () => {
@@ -244,7 +241,7 @@ test('a direct visitor cannot move the block onto someone else by faking CF-Conn
   const attacker = nextIp();
   const victim = nextIp();
   ips.add(victim);
-  for (let i = 0; i < 3; i++) await login(attacker, user.phone, WRONG, { 'CF-Connecting-IP': victim });
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await login(attacker, user.phone, WRONG, { 'CF-Connecting-IP': victim });
 
   assert.strictEqual((await blockRows(attacker)).length, 1, 'the attacker is blocked by their real address');
   assert.strictEqual((await blockRows(victim)).length, 0, 'the faked address is not');
@@ -257,7 +254,7 @@ test('behind Cloudflare the visitor is told apart from the Cloudflare edge', asy
   const visitorA = nextIp();
   const visitorB = nextIp();
   ips.add(edge);
-  for (let i = 0; i < 3; i++) await login(edge, user.phone, WRONG, { 'CF-Connecting-IP': visitorA });
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await login(edge, user.phone, WRONG, { 'CF-Connecting-IP': visitorA });
 
   assert.strictEqual((await blockRows(visitorA)).length, 1);
   assert.strictEqual((await blockRows(edge)).length, 0, 'the Cloudflare edge itself is never blocked');
@@ -301,14 +298,14 @@ test('trusted IP rules', () => {
 test('a password shorter than 6 characters gets a clear message and does not use up an attempt', async () => {
   const user = await makeUser();
   const ip = nextIp();
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
     const res = await login(ip, user.phone, 'abc12');
     assert.strictEqual(res.status, 400);
     assert.strictEqual(res.body.errors[0].msg, 'Password must be at least 6 characters');
   }
   assert.strictEqual((await blockRows(ip)).length, 0, 'nothing was counted');
   const next = await login(ip, user.phone);
-  assert.strictEqual(next.body.attemptsLeft, 2, 'the three attempts are all still there');
+  assert.strictEqual(next.body.attemptsLeft, MAX_ATTEMPTS - 1, 'all the attempts are still there');
 });
 
 test('the attempts left are never shown when the IP cannot be trusted', async () => {
@@ -360,14 +357,14 @@ test('behind Cloudflare with only X-Forwarded-For: the visitor is blocked and co
 
   const first = await viaForwarded(user.phone, headers);
   assert.strictEqual(first.status, 401);
-  assert.strictEqual(first.body.attemptsLeft, 2, 'the countdown shows when the visitor can be told');
-  assert.strictEqual((await viaForwarded(user.phone, headers)).body.attemptsLeft, 1);
+  assert.strictEqual(first.body.attemptsLeft, MAX_ATTEMPTS - 1, 'the countdown shows when the visitor can be told');
+  for (let i = 2; i < MAX_ATTEMPTS; i++) assert.strictEqual((await viaForwarded(user.phone, headers)).body.attemptsLeft, MAX_ATTEMPTS - i);
   assert.strictEqual((await viaForwarded(user.phone, headers)).status, 429);
   assert.strictEqual((await blockRows(visitor)).length, 1);
 
   // Someone talking straight to the server and naming the first visitor in the header is not that visitor.
   const other = await makeUser(); // the first phone is already blocked, so it would be refused before anything is counted
-  for (let i = 0; i < 3; i++) await viaForwarded(other.phone, { 'X-Forwarded-For': `${visitor}, ${faked}`, 'CF-Connecting-IP': visitor });
+  for (let i = 0; i < MAX_ATTEMPTS; i++) await viaForwarded(other.phone, { 'X-Forwarded-For': `${visitor}, ${faked}`, 'CF-Connecting-IP': visitor });
   assert.strictEqual((await blockRows(visitor)).length, 1, 'the real visitor was not blocked a second time by the fake');
   assert.strictEqual((await blockRows(faked)).length, 1, 'the one who actually connected is the one blocked');
 });
