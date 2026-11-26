@@ -431,15 +431,20 @@
  *           schema:
  *             type: object
  *             properties:
+ *               current_password:
+ *                 type: string
+ *                 example: "Old@1234"
+ *                 description: The old password. 3 wrong ones block changing the password for 24 hours (429).
  *               password:
  *                 type: string
- *                 example: "1qaz1qaz"
- *                 description: The new password
+ *                 example: "New@1234"
+ *                 description: The new password, at least 8 characters with one uppercase letter, one number and one special character
  *               conf_password:
  *                 type: string
- *                 example: "1qaz1qaz"
+ *                 example: "New@1234"
  *                 description: Confirmation of the new password
  *             required:
+ *               - current_password
  *               - password
  *               - conf_password
  *     responses:

@@ -1,4 +1,5 @@
 const { check, body } = require('express-validator');
+const passwordRules = require('./passwordRules');
 
 exports.otpValidation = [
     check('email','Emial is required').not().isEmpty(),
@@ -12,7 +13,14 @@ exports.signUpValidation = [
     check('email','Email is required').not().isEmpty(),
     check('email','Please enter a valid email').isEmail().normalizeEmail({ gmail_remove_dots:false }),
     check('pincode','Pincode is required').not().isEmpty(),
-    check('password','Password must be atleast 6 characters').isLength({ min:6 }),
+    // A new account's password: at least 8 characters, one uppercase letter, one number and one special character
+    // (the same rules as Change Password). Login does not use this: existing accounts keep their passwords.
+    body('password').custom((value) => {
+        if (!passwordRules.isValid(value)) {
+            throw new Error(passwordRules.MESSAGE);
+        }
+        return true;
+    }),
     check('is_eighteen','18 checkbox is required').not().isEmpty(),
 ]
 
@@ -22,7 +30,15 @@ exports.loginValidation = [
 ]
 
 exports.changePwdValidation = [
-    check('password', 'Password is required and must be at least 8 characters').isLength({ min: 8 }),
+    // The user must type their old password first; the service checks it against the saved one.
+    check('current_password', 'Old password is required').isString().bail().not().isEmpty(),
+    // New password: at least 8 characters, one uppercase letter, one number and one special character.
+    body('password').custom((value) => {
+        if (!passwordRules.isValid(value)) {
+            throw new Error(passwordRules.MESSAGE);
+        }
+        return true;
+    }),
     check('conf_password', 'Confirm Password is required').not().isEmpty(),
     body('conf_password').custom((value, { req }) => {
         if (value !== req.body.password) {
