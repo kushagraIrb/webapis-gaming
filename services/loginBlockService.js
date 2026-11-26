@@ -3,7 +3,7 @@ const loginBlockModel = require('../models/loginBlockModel');
 const { trustedClientIp } = require('../helpers/trustedIp');
 const { logger } = require('../logger');
 
-// The login block. 3 wrong-password or unknown-phone logins from one IP within 5 minutes block that IP (the
+// The login block. 5 wrong-password or unknown-phone logins from one IP within 5 minutes block that IP (the
 // whole site) and every existing phone number tried from it, for 1 hour. An admin can unblock early. The
 // numbers are fixed here on purpose: there is no switch for them in the .env.
 //
@@ -11,7 +11,7 @@ const { logger } = require('../logger');
 //   * An IP is only counted and blocked when it cannot have been faked (helpers/trustedIp.js). Otherwise
 //     anyone could make us block somebody else's address, and behind Cloudflare every visitor would look alike.
 //   * If the database fails while checking, the login goes ahead: a fault here must never lock everyone out.
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 5;
 const WINDOW_MINUTES = 5;
 const BLOCK_MINUTES = 60;
 
